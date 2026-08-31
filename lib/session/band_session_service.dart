@@ -74,9 +74,15 @@ class BandSessionService {
     _emit(_state.copyWith(connectionStatus: BleConnectionStatus.connecting));
 
     // Listen to events from the Native SDK
-    _eventSub = _sdk.events.listen(_onEvent);
+    _eventSub ??= _sdk.events.listen(_onEvent);
 
-    final ok = await _sdk.connect(macAddress);
+    bool ok = await _sdk.connect(macAddress);
+    if (!ok) {
+      debugPrint('[BandSession] First connection attempt failed. Retrying in 1.2s...');
+      await Future.delayed(const Duration(milliseconds: 1200));
+      ok = await _sdk.connect(macAddress);
+    }
+
     if (!ok) {
       _emit(_state.copyWith(
         connectionStatus: BleConnectionStatus.disconnected,

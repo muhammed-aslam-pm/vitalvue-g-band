@@ -60,6 +60,22 @@ class _BandMonitorPageState extends State<BandMonitorPage>
 
     if (!context.mounted) return;
 
+    // Check if Location Services (GPS) is enabled (mandatory on Android 6-11 for BLE scanning)
+    try {
+      final locStatus = await Permission.location.serviceStatus;
+      if (locStatus == ServiceStatus.disabled && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Notice: Location Services (GPS) are OFF. Please enable Location in phone settings if scanning finds no devices.',
+            ),
+            backgroundColor: Color(0xFFFFA726),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (_) {}
+
     if (!context.mounted) return;
 
     context.read<BandMonitorBloc>().add(const StartScan());

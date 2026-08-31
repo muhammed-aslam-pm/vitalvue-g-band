@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../bloc/band_monitor_bloc.dart';
@@ -35,7 +34,7 @@ class DeviceScanSheet extends StatelessWidget {
             ),
           ),
           Text(
-            'Nearby G-Band (MF91) Devices',
+            'Nearby Smartband Devices',
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurface,
               fontSize: 20,
@@ -44,7 +43,7 @@ class DeviceScanSheet extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Scanning for MF91 smartbands…',
+            'Ensure Bluetooth & Location (GPS) are enabled and band is nearby…',
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
               fontSize: 13,
@@ -63,7 +62,7 @@ class DeviceScanSheet extends StatelessWidget {
                             color: Color(0xFF1A73E8)),
                         const SizedBox(height: 16),
                         Text(
-                          'Looking for devices…',
+                          'Looking for nearby G-Band devices…',
                           style: TextStyle(
                               color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                               fontSize: 14),
@@ -74,7 +73,17 @@ class DeviceScanSheet extends StatelessWidget {
                 );
               }
 
-              final results = state is BandScanningState ? state.results : [];
+              final rawResults = state is BandScanningState ? state.results : [];
+              final List<VpScanResult> results = List<VpScanResult>.from(rawResults);
+              
+              // Sort known bands (MF91, JCV5, G-BAND, VEEPOO etc.) to the top
+              results.sort((a, b) {
+                final aKnown = _isKnownBand(a.name);
+                final bKnown = _isKnownBand(b.name);
+                if (aKnown && !bKnown) return -1;
+                if (!aKnown && bKnown) return 1;
+                return a.name.compareTo(b.name);
+              });
 
               return Flexible(
                 child: ListView.separated(
@@ -85,14 +94,9 @@ class DeviceScanSheet extends StatelessWidget {
                     height: 1,
                   ),
                   itemBuilder: (context, i) {
-                    final r = results[i] as VpScanResult;
-                    final name = r.name.isNotEmpty
-                        ? r.name
-                        : 'Unknown Device';
-                    
-                    if (!name.toUpperCase().contains('MF91')) {
-                      return const SizedBox.shrink();
-                    }
+                    final r = results[i];
+                    final name = r.name.isNotEmpty ? r.name : 'Unknown Device (${r.mac})';
+                    final isKnown = _isKnownBand(r.name);
 
                     return ListTile(
                       contentPadding: const EdgeInsets.symmetric(
@@ -101,11 +105,13 @@ class DeviceScanSheet extends StatelessWidget {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1A73E8).withValues(alpha: 0.15),
+                          color: (isKnown ? const Color(0xFF1A73E8) : Colors.grey)
+                              .withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.watch_rounded,
-                            color: Color(0xFF1A73E8), size: 22),
+                        child: Icon(Icons.watch_rounded,
+                            color: isKnown ? const Color(0xFF1A73E8) : Colors.grey,
+                            size: 22),
                       ),
                       title: Text(
                         name,
@@ -134,15 +140,12 @@ class DeviceScanSheet extends StatelessWidget {
                           Navigator.pop(context);
                           context
                               .read<BandMonitorBloc>()
-                              .add(ConnectToBand(r.mac, r.name));
+                              .add(ConnectToBand(r.mac, r.name.isNotEmpty ? r.name : 'G-Band'));
                         },
                         child: const Text('Connect',
                             style: TextStyle(fontSize: 13)),
                       ),
-                    )
-                        .animate()
-                        .fadeIn(delay: (i * 60).ms, duration: 300.ms)
-                        .slideX(begin: 0.1, end: 0);
+                    );
                   },
                 ),
               );
@@ -169,5 +172,15 @@ class DeviceScanSheet extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  static bool _isKnownBand(String name) {
+    if (name.isEmpty) return false;
+    final upper = name.toUpperCase();
+    const prefixes = [
+      'MF91', 'JCV5', 'GBAND', 'G-BAND', 'VEEPOO', 'VP', 'E66', 'B36',
+      'V100', 'JSTYLE', 'BAND', 'SMART', 'WATCH'
+    ];
+    return prefixes.any((p) => upper.contains(p));
   }
 }

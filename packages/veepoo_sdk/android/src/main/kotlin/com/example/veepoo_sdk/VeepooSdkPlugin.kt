@@ -47,6 +47,13 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                 currentMac = mac
                 Log.i(TAG, "[connect] Connecting to MAC: $mac")
                 
+                // Ensure scanning is stopped prior to GATT connection to prevent status 133 errors
+                try {
+                    VPOperateManager.getInstance().stopScanDevice()
+                } catch (e: Exception) {
+                    Log.w(TAG, "[connect] Error stopping scan before connect: ${e.message}")
+                }
+                
                 // Register connection status listener immediately to avoid missing callbacks
                 VPOperateManager.getInstance().registerConnectStatusListener(mac, object : IABleConnectStatusListener() {
                     override fun onConnectStatusChanged(mac: String?, status: Int) {
@@ -75,15 +82,27 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                 })
             }
             "startScan" -> {
+                try {
+                    VPOperateManager.getInstance().stopScanDevice()
+                } catch (_: Exception) {}
+
                 VPOperateManager.getInstance().startScanDevice(object : com.inuker.bluetooth.library.search.response.SearchResponse {
                     override fun onSearchStarted() {}
                     override fun onDeviceFounded(device: com.inuker.bluetooth.library.search.SearchResult?) {
-                        if (device != null && device.name.isNotEmpty()) {
-                            sendEvent(JSONObject().apply {
-                                put("type", "scanResult")
-                                put("mac", device.address)
-                                put("name", device.name)
-                            })
+                        if (device != null) {
+                            val address = device.address ?: ""
+                            if (address.isNotEmpty()) {
+                                val name = when {
+                                    !device.name.isNullOrEmpty() && device.name != "NULL" -> device.name
+                                    device.device != null && !device.device.name.isNullOrEmpty() && device.device.name != "NULL" -> device.device.name
+                                    else -> "Unknown Device"
+                                }
+                                sendEvent(JSONObject().apply {
+                                    put("type", "scanResult")
+                                    put("mac", address)
+                                    put("name", name)
+                                })
+                            }
                         }
                     }
                     override fun onSearchStopped() {}
