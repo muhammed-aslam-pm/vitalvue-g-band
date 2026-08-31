@@ -345,6 +345,25 @@ class _BandMonitorPageState extends State<BandMonitorPage>
             .fadeIn(delay: 80.ms, duration: 400.ms)
             .slideY(begin: 0.2, end: 0, duration: 400.ms),
         VitalCard(
+          label: 'Respiration',
+          value: v.respiratoryRate > 0 ? '${v.respiratoryRate}' : '--',
+          unit: 'rpm',
+          icon: Icons.air_rounded,
+          accentColor: const Color(0xFF00ACC1),
+          subtitle: 'Breaths per minute',
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => const VitalsDetailsPage(
+              title: 'Respiratory Rate',
+              dbColumnName: 'respirationRate',
+              unit: 'rpm',
+              accentColor: Color(0xFF00ACC1),
+            ),
+          )),
+        )
+            .animate()
+            .fadeIn(delay: 120.ms, duration: 400.ms)
+            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        VitalCard(
           label: 'Temperature',
           value: v.tempC > 0 ? '${v.tempC.toStringAsFixed(1)}°' : '--',
           unit: 'C',

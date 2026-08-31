@@ -137,6 +137,7 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
         connectionStatus: status,
         hr: data['hr'] as int? ?? 0,
         spo2: data['spo2'] as int? ?? 0,
+        respiratoryRate: data['respiratoryRate'] as int? ?? 0,
         tempC: (data['tempC'] as num?)?.toDouble() ?? 0.0,
         tempSkin: (data['tempSkin'] as num?)?.toDouble() ?? 0.0,
         systolic: data['bpSys'] as int?,

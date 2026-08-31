@@ -60,6 +60,7 @@ class BandState {
   final BleConnectionStatus connectionStatus;
   final int hr;
   final int spo2;
+  final int respiratoryRate;
   final double tempC;
   final double tempSkin;
   final int? systolic;
@@ -92,6 +93,7 @@ class BandState {
     this.connectionStatus = BleConnectionStatus.disconnected,
     this.hr = 0,
     this.spo2 = 0,
+    this.respiratoryRate = 0,
     this.tempC = 0.0,
     this.tempSkin = 0.0,
     this.systolic,
@@ -123,6 +125,7 @@ class BandState {
     BleConnectionStatus? connectionStatus,
     int? hr,
     int? spo2,
+    int? respiratoryRate,
     double? tempC,
     double? tempSkin,
     int? systolic,
@@ -155,6 +158,7 @@ class BandState {
       connectionStatus: connectionStatus ?? this.connectionStatus,
       hr: hr ?? this.hr,
       spo2: spo2 ?? this.spo2,
+      respiratoryRate: respiratoryRate ?? this.respiratoryRate,
       tempC: tempC ?? this.tempC,
       tempSkin: tempSkin ?? this.tempSkin,
       systolic: systolic ?? this.systolic,

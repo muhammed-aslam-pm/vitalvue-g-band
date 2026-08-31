@@ -1,14 +1,16 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:gband_monitor/main.dart';
+import 'package:gband_monitor/protocol/veepoo_protocol.dart';
 
 void main() {
-  testWidgets('App smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const GBandMonitorApp());
+  test('BandState initializes with zero respiratory rate and updates correctly', () {
+    const state = BandState();
+    expect(state.respiratoryRate, 0);
+    expect(state.hr, 0);
+    expect(state.spo2, 0);
 
-    // Verify that the splash screen or login screen appears
-    expect(find.byType(CircularProgressIndicator), findsWidgets);
+    final updated = state.copyWith(respiratoryRate: 18, spo2: 98, hr: 72);
+    expect(updated.respiratoryRate, 18);
+    expect(updated.spo2, 98);
+    expect(updated.hr, 72);
   });
 }

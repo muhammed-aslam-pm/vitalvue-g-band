@@ -42,7 +42,7 @@ class _VitalsDetailsPageState extends State<VitalsDetailsPage> {
       if (val == null) return false;
 
       // Integer vitals: filter out 0 (sensor not ready / no reading yet)
-      if (['hr', 'spo2', 'bpSys', 'bpDia', 'hrv'].contains(widget.dbColumnName)) {
+      if (['hr', 'spo2', 'respirationRate', 'bpSys', 'bpDia', 'hrv'].contains(widget.dbColumnName)) {
         return (val as num) > 0;
       }
       // Float vitals: filter out 0.0

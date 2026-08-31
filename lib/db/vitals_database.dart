@@ -19,7 +19,7 @@ class VitalsDatabase {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _createDB,
       onUpgrade: (db, oldVersion, newVersion) async {
         // Always recreate the table on any version bump to clear stale data.
@@ -44,6 +44,7 @@ CREATE TABLE vitals (
   device_id $textType,
   hr $integerType,
   spo2 $integerType,
+  respirationRate $integerType,
   tempC $realType,
   tempSkin $realType,
   bpSys $integerType,

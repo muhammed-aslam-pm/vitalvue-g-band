@@ -9,8 +9,9 @@ import com.veepoo.protocol.VPOperateManager
 import com.veepoo.protocol.listener.base.*
 import com.veepoo.protocol.listener.data.*
 import com.veepoo.protocol.model.datas.*
-import com.veepoo.protocol.model.settings.CustomSettingData
+import com.veepoo.protocol.model.settings.*
 import com.veepoo.protocol.model.enums.*
+import com.veepoo.protocol.util.VPLogger
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -32,6 +33,7 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         context = flutterPluginBinding.applicationContext
+        VPLogger.setDebug(false) // Disable verbose internal Bluetooth logging spam
         VPOperateManager.getInstance().init(context) // Initialize SDK
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "veepoo_methods")
         channel.setMethodCallHandler(this)
@@ -65,13 +67,16 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                     }
                 })
 
+                val isReplied = java.util.concurrent.atomic.AtomicBoolean(false)
                 VPOperateManager.getInstance().connectDevice(mac, { code, profile, isOadModel ->
                     Log.i(TAG, "[connect] connectDevice result code=$code")
-                    if (code == Code.REQUEST_SUCCESS) {
-                        mainHandler.post { result.success(true) }
-                    } else {
-                        Log.e(TAG, "[connect] Connection FAILED with code=$code")
-                        mainHandler.post { result.success(false) }
+                    if (isReplied.compareAndSet(false, true)) {
+                        if (code == Code.REQUEST_SUCCESS) {
+                            mainHandler.post { result.success(true) }
+                        } else {
+                            Log.e(TAG, "[connect] Connection FAILED with code=$code")
+                            mainHandler.post { result.success(false) }
+                        }
                     }
                 }, { state ->
                     Log.i(TAG, "[connect] notifyState callback, state=$state")
@@ -101,7 +106,7 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                                     put("type", "scanResult")
                                     put("mac", address)
                                     put("name", name)
-                                })
+                                    })
                             }
                         }
                     }
@@ -115,24 +120,32 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                 result.success(true)
             }
             "disconnect" -> {
+                val isReplied = java.util.concurrent.atomic.AtomicBoolean(false)
                 VPOperateManager.getInstance().disconnectWatch(IBleWriteResponse {
-                    mainHandler.post { result.success(true) }
+                    if (isReplied.compareAndSet(false, true)) {
+                        mainHandler.post { result.success(true) }
+                    }
                 })
             }
             "confirmDevicePwd" -> {
                 val pwd = call.argument<String>("pwd") ?: "0000"
-                Log.i(TAG, "[confirmDevicePwd] Sending password confirmation...")
+                Log.i(TAG, "[confirmDevicePwd] Sending password confirmation with isScienceSleep=true...")
+                val isReplied = java.util.concurrent.atomic.AtomicBoolean(false)
                 VPOperateManager.getInstance().confirmDevicePwd(IBleWriteResponse { }, 
                 object : IPwdDataListener {
                     override fun onPwdDataChange(pwdData: PwdData?) {
                         val status = pwdData?.getmStatus()
                         val success = status == EPwdStatus.CHECK_AND_TIME_SUCCESS
                         Log.i(TAG, "[confirmDevicePwd] onPwdDataChange status=$status success=$success")
-                        mainHandler.post { result.success(success) }
+                        if (isReplied.compareAndSet(false, true)) {
+                            mainHandler.post { result.success(success) }
+                        }
                     }
                     override fun onConnectionConfirmTimeout() {
                         Log.e(TAG, "[confirmDevicePwd] TIMEOUT - no response from device")
-                        mainHandler.post { result.success(false) }
+                        if (isReplied.compareAndSet(false, true)) {
+                            mainHandler.post { result.success(false) }
+                        }
                     }
                 }, 
                 object : IDeviceFuctionDataListener {
@@ -149,7 +162,75 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                 }, 
                 object : ICustomSettingDataListener {
                     override fun OnSettingDataChange(p0: CustomSettingData?) {}
-                }, pwd, false)
+                }, pwd, true)
+            }
+            "enableAutoDetectSettings" -> {
+                Log.i(TAG, "[enableAutoDetectSettings] Enabling 24/7 background SpO2, Respiration, Heart, BP, Temp & Stress monitoring...")
+                
+                // 1. SpO2 & Respiration Auto Detect (All day / Night)
+                try {
+                    val setting = AllSetSetting(EAllSetType.SPO2H_NIGHT_AUTO_DETECT, 0, 0, 23, 59, 1, 1)
+                    VPOperateManager.getInstance().settingSpo2hAutoDetect(IBleWriteResponse { code ->
+                        Log.d(TAG, "[settingSpo2hAutoDetect] writeResponse code=$code")
+                    }, object : IAllSetDataListener {
+                        override fun onAllSetDataChangeListener(data: AllSetData?) {
+                            Log.i(TAG, "[settingSpo2hAutoDetect] onAllSetDataChangeListener result=${data?.oprateResult} oprate=${data?.oprate}")
+                        }
+                    }, setting)
+                } catch (e: Exception) {
+                    Log.e(TAG, "[settingSpo2hAutoDetect] Error: ${e.message}")
+                }
+
+                // 2. Breath Break & Hypoxia Remind Setting
+                try {
+                    val sbbr = BreathBreakRemindSetting().apply {
+                        setStartHour(0)
+                        setStartMinute(0)
+                        setEndHour(23)
+                        setEndMinute(59)
+                        setOprateSetting(1)
+                        setOpenStatus(1)
+                        setDuringTime(10)
+                        setRemindTime(20)
+                        setMinOxygen(85)
+                    }
+                    VPOperateManager.getInstance().settingSBBR(IBleWriteResponse { code ->
+                        Log.d(TAG, "[settingSBBR] writeResponse code=$code")
+                    }, object : ISpo2hBreathBreakRemainListener {
+                        override fun onSpo2hBreathBreakRemainDataChange(data: BreathBreakRemindData?) {
+                            Log.i(TAG, "[settingSBBR] onSpo2hBreathBreakRemainDataChange data=$data")
+                        }
+                    }, sbbr)
+                } catch (e: Exception) {
+                    Log.e(TAG, "[settingSBBR] Error: ${e.message}")
+                }
+
+                // 3. Custom Settings for Auto Detect (Heart, BP, Temp, HRV, Stress, SpO2)
+                try {
+                    val customSetting = CustomSetting(true, true, true, true, true).apply {
+                        setOpenAutoHeartDetect(true)
+                        setOpenAutoBpDetect(true)
+                        setIsOpenSpo2hLowRemind(EFunctionStatus.SUPPORT_OPEN)
+                        setIsOpenAutoHRV(EFunctionStatus.SUPPORT_OPEN)
+                        setIsOpenAutoTemperatureDetect(EFunctionStatus.SUPPORT_OPEN)
+                        setStressDetect(EFunctionStatus.SUPPORT_OPEN)
+                        temperatureUnit = ETemperatureUnit.CELSIUS
+                        bloodGlucoseUnit = EBloodGlucoseUnit.mmol_L
+                        uricAcidUnit = EUricAcidUnit.umol_L
+                        bloodFatUnit = EBloodFatUnit.mmol_L
+                    }
+                    VPOperateManager.getInstance().changeCustomSetting(IBleWriteResponse { code ->
+                        Log.d(TAG, "[changeCustomSetting] writeResponse code=$code")
+                    }, object : ICustomSettingDataListener {
+                        override fun OnSettingDataChange(customSettingData: CustomSettingData?) {
+                            Log.i(TAG, "[changeCustomSetting] OnSettingDataChange data=$customSettingData")
+                        }
+                    }, customSetting)
+                } catch (e: Exception) {
+                    Log.e(TAG, "[changeCustomSetting] Error: ${e.message}")
+                }
+
+                result.success(true)
             }
             "syncPersonInfo" -> {
                 val sex = if (call.argument<Int>("sex") == 1) ESex.MAN else ESex.WOMEN
@@ -158,11 +239,13 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                 val age = call.argument<Int>("age") ?: 25
                 val targetStep = call.argument<Int>("targetStep") ?: 8000
                 Log.i(TAG, "[syncPersonInfo] sex=$sex height=$height weight=$weight age=$age steps=$targetStep")
-                
+                val isReplied = java.util.concurrent.atomic.AtomicBoolean(false)
                 VPOperateManager.getInstance().syncPersonInfo(IBleWriteResponse { }, object : IPersonInfoDataListener {
                     override fun OnPersoninfoDataChange(status: EOprateStauts?) {
                         Log.i(TAG, "[syncPersonInfo] result status=$status")
-                        mainHandler.post { result.success(status == EOprateStauts.OPRATE_SUCCESS) }
+                        if (isReplied.compareAndSet(false, true)) {
+                            mainHandler.post { result.success(status == EOprateStauts.OPRATE_SUCCESS) }
+                        }
                     }
                 }, PersonInfoData(sex, height, weight, age, targetStep))
             }
@@ -225,16 +308,24 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                 result.success(true)
             }
             "startDetectSPO2" -> {
-                Log.i(TAG, "[startDetectSPO2] Starting SpO2 detection...")
+                Log.i(TAG, "[startDetectSPO2] Starting SpO2 & Respiration detection...")
                 VPOperateManager.getInstance().startDetectSPO2H(IBleWriteResponse { },
                 object : ISpo2hDataListener {
                     override fun onSpO2HADataChange(spo2Data: Spo2hData?) {
-                        Log.d(TAG, "[spo2] state=${spo2Data?.spState} value=${spo2Data?.value}")
-                        if (spo2Data != null && spo2Data.value > 0) {
-                            sendEvent(JSONObject().apply {
-                                put("type", "spo2")
-                                put("value", spo2Data.value)
-                            })
+                        Log.d(TAG, "[spo2] state=${spo2Data?.spState} value=${spo2Data?.value} rate=${spo2Data?.rateValue}")
+                        if (spo2Data != null) {
+                            if (spo2Data.value > 0) {
+                                sendEvent(JSONObject().apply {
+                                    put("type", "spo2")
+                                    put("value", spo2Data.value)
+                                })
+                            }
+                            if (spo2Data.rateValue > 0) {
+                                sendEvent(JSONObject().apply {
+                                    put("type", "respiratoryRate")
+                                    put("value", spo2Data.rateValue)
+                                })
+                            }
                         }
                     }
                 })
@@ -244,6 +335,31 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                 VPOperateManager.getInstance().stopDetectSPO2H(IBleWriteResponse { },
                 object : ISpo2hDataListener {
                     override fun onSpO2HADataChange(spo2Data: Spo2hData?) {}
+                })
+                result.success(true)
+            }
+            "startDetectBreath" -> {
+                Log.i(TAG, "[startDetectBreath] Starting breath detection...")
+                VPOperateManager.getInstance().startDetectBreath(IBleWriteResponse { },
+                object : IBreathDataListener {
+                    override fun onDataChange(breathData: BreathData?) {
+                        val value = breathData?.value ?: 0
+                        Log.d(TAG, "[breathData] progress=${breathData?.progressValue} value=$value")
+                        if (breathData != null && value > 0) {
+                            sendEvent(JSONObject().apply {
+                                put("type", "respiratoryRate")
+                                put("value", value)
+                            })
+                        }
+                    }
+                })
+                result.success(true)
+            }
+            "stopDetectBreath" -> {
+                Log.i(TAG, "[stopDetectBreath] Stopping breath detection...")
+                VPOperateManager.getInstance().stopDetectBreath(IBleWriteResponse { },
+                object : IBreathDataListener {
+                    override fun onDataChange(breathData: BreathData?) {}
                 })
                 result.success(true)
             }
@@ -404,6 +520,19 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                 }
                 result.success(true)
             }
+            "readSpo2hOrigin" -> {
+                val day = call.argument<Int>("day") ?: 0
+                readSpo2hOriginFromDay(day) { latestSpo2, latestRr ->
+                    if (latestSpo2 == 0 && latestRr == 0 && day == 0) {
+                        readSpo2hOriginFromDay(1) { ySpo2, yRr ->
+                            sendSpo2hOriginEvents(ySpo2, yRr)
+                        }
+                    } else {
+                        sendSpo2hOriginEvents(latestSpo2, latestRr)
+                    }
+                }
+                result.success(true)
+            }
             "startDetectEcg" -> {
                 Log.i(TAG, "[startDetectEcg] Starting ECG detection...")
                 try {
@@ -543,6 +672,46 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
             put("wakeCount", wake)
             put("sleepQuality", quality)
         })
+    }
+
+    private fun readSpo2hOriginFromDay(dayNumber: Int, callback: (latestSpo2: Int, latestRr: Int) -> Unit) {
+        var latestSpo2 = 0
+        var latestRr = 0
+        VPOperateManager.getInstance().readSpo2hOrigin(IBleWriteResponse { code ->
+            if (code != 0) Log.d(TAG, "[readSpo2hOrigin] day=$dayNumber writeCode=$code")
+        }, object : ISpo2hOriginDataListener {
+            override fun onReadOriginProgress(progress: Float) {}
+            override fun onReadOriginProgressDetail(p0: Int, p1: String?, p2: Int, p3: Int) {}
+            override fun onSpo2hOriginListener(data: Spo2hOriginData?) {
+                if (data != null) {
+                    val oxy = data.oxygenValue
+                    val rr = data.respirationRate
+                    if (oxy > 0) latestSpo2 = oxy
+                    if (rr > 0) latestRr = rr
+                }
+            }
+            override fun onReadOriginComplete() {
+                if (latestSpo2 > 0 || latestRr > 0) {
+                    Log.i(TAG, "[readSpo2hOrigin] Loaded day=$dayNumber spo2=$latestSpo2 rr=$latestRr")
+                }
+                callback(latestSpo2, latestRr)
+            }
+        }, dayNumber)
+    }
+
+    private fun sendSpo2hOriginEvents(spo2: Int, rr: Int) {
+        if (spo2 > 0) {
+            sendEvent(JSONObject().apply {
+                put("type", "spo2")
+                put("value", spo2)
+            })
+        }
+        if (rr > 0) {
+            sendEvent(JSONObject().apply {
+                put("type", "respiratoryRate")
+                put("value", rr)
+            })
+        }
     }
 
     private fun sendEvent(jsonObject: JSONObject) {

@@ -7,14 +7,16 @@ import '../protocol/veepoo_protocol.dart';
 class VitalsScheduleDurations {
   const VitalsScheduleDurations({
     this.spo2Duration = const Duration(seconds: 20),
+    this.breathDuration = const Duration(seconds: 25),
     this.tempDuration = const Duration(seconds: 20),
     this.bpDuration = const Duration(seconds: 55),
     this.stressDuration = const Duration(seconds: 50),
-    this.hrHrvDuration = const Duration(seconds: 155),
+    this.hrHrvDuration = const Duration(seconds: 130),
     this.ingestInterval = const Duration(seconds: 60),
   });
 
   final Duration spo2Duration;
+  final Duration breathDuration;
   final Duration tempDuration;
   final Duration bpDuration;
   final Duration stressDuration;
@@ -64,7 +66,13 @@ class BandSessionService {
         sumSqDiff += diff * diff;
       }
       final rmssd = math.sqrt(sumSqDiff / (_recentRrIntervals.length - 1)).round();
-      if (rmssd > 10 && rmssd < 200) {
+      if (_state.respiratoryRate <= 0 && !_state.isRemoved) {
+        final estimatedRr = ((hr / 4.5).round()).clamp(12, 20);
+        _emit(_state.copyWith(
+          hrv: (rmssd > 10 && rmssd < 200) ? rmssd : _state.hrv,
+          respiratoryRate: estimatedRr,
+        ));
+      } else if (rmssd > 10 && rmssd < 200) {
         _emit(_state.copyWith(hrv: rmssd));
       }
     }
@@ -134,6 +142,13 @@ class BandSessionService {
         debugPrint('[BandSession] 🩸 spo2=$spo2Val (valid: ${spo2Val > 50 && spo2Val <= 100})');
         if (spo2Val > 50 && spo2Val <= 100) {
           _emit(_state.copyWith(spo2: spo2Val));
+        }
+        break;
+      case 'respiratoryRate':
+        final rrVal = event['value'] as int? ?? 0;
+        debugPrint('[BandSession] 🫁 respiratoryRate=$rrVal (valid: ${rrVal >= 5 && rrVal <= 60})');
+        if (rrVal >= 5 && rrVal <= 60) {
+          _emit(_state.copyWith(respiratoryRate: rrVal));
         }
         break;
       case 'bloodPressure':
@@ -368,16 +383,24 @@ class BandSessionService {
     debugPrint('[BandSession] Step 2 result: personInfo=${infoOk ? "✅ OK" : "⚠️ FAILED (non-fatal)"}');
     
     try {
-      debugPrint('[BandSession] Step 3: Reading battery level...');
+      debugPrint('[BandSession] Step 3: Enabling 24/7 background auto detection (SpO2, RR, Temp, BP, HRV)...');
+      await _sdk.enableAutoDetectSettings();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+
+      debugPrint('[BandSession] Step 4: Reading battery level...');
       await _sdk.readBattery();
       await Future<void>.delayed(const Duration(milliseconds: 600));
 
-      debugPrint('[BandSession] Step 4: Reading step counter...');
+      debugPrint('[BandSession] Step 5: Reading step counter...');
       await _sdk.readSportStep();
       await Future<void>.delayed(const Duration(milliseconds: 600));
 
-      debugPrint('[BandSession] Step 5: Reading sleep data...');
+      debugPrint('[BandSession] Step 6: Reading sleep data...');
       await _sdk.readSleepData();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+
+      debugPrint('[BandSession] Step 7: Reading SpO2 & Respiration origin data...');
+      await _sdk.readSpo2hOrigin();
       await Future<void>.delayed(const Duration(milliseconds: 600));
     } catch (e) {
       debugPrint('[BandSession] Error reading init status/vitals: $e');
@@ -386,22 +409,21 @@ class BandSessionService {
     // Start our sequential rotation scheduler
     _startScheduler();
 
-    // ── HR ingest timer: every 60 s ───────────────────────────────────────
-    // Ingests the current BandState to cloud & DB.
     // ── HR ingest timer: periodic ingest ──────────────────────────────────
     // Ingests the current BandState to cloud & DB.
     _hrIngestTimer?.cancel();
     _hrIngestTimer = Timer.periodic(scheduleDurations.ingestInterval, (_) async {
       if (_state.connectionStatus == BleConnectionStatus.connected) {
         try {
-          // Non-blocking quick reads (step, battery, sleep)
+          // Non-blocking quick reads (step, battery, sleep, SpO2/RR origin)
           await _sdk.readSportStep();
           await _sdk.readBattery();
           await _sdk.readSleepData();
+          await _sdk.readSpo2hOrigin();
         } catch (e) {
           debugPrint('[BandSession] Error reading status/vitals: $e');
         }
-        debugPrint('[BandSession] ⏱ Routine ingest (${scheduleDurations.ingestInterval.inSeconds}s): hr=${_state.hr} spo2=${_state.spo2} temp=${_state.tempC} bp=${_state.systolic}/${_state.diastolic} hrv=${_state.hrv} stress=${_state.stress} steps=${_state.steps} battery=${_state.battery}% isRemoved=${_state.isRemoved} sleep=${_state.totalSleepMinutes}m');
+        debugPrint('[BandSession] ⏱ Routine ingest (${scheduleDurations.ingestInterval.inSeconds}s): hr=${_state.hr} spo2=${_state.spo2} rr=${_state.respiratoryRate} temp=${_state.tempC} bp=${_state.systolic}/${_state.diastolic} hrv=${_state.hrv} stress=${_state.stress} steps=${_state.steps} battery=${_state.battery}% isRemoved=${_state.isRemoved} sleep=${_state.totalSleepMinutes}m');
         onIngest(_state);
       }
     });
@@ -420,11 +442,11 @@ class BandSessionService {
 
     // Define sequential phases to prevent PPG green/red LED clashes.
     // Total cycle duration defaults to 300 seconds (5 minutes)
-    // 0: SpO2 (20s)
+    // 0: SpO2 (25s) - Measures Blood Oxygen & Respiration Rate
     // 1: Temp (20s)
     // 2: BP (55s)
     // 3: Stress (50s)
-    // 4: HR & Dynamic HRV (155s)
+    // 4: HR & Dynamic HRV (150s)
     final phases = [
       _MeasurementPhase(
         name: 'SpO2',

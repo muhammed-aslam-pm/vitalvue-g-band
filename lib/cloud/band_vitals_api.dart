@@ -41,6 +41,7 @@ class BandVitalsApi {
     required String deviceId,
     required int hr,
     required int spo2,
+    int respirationRate = 0,
     required double tempC,
     double tempSkin = 0.0,
     int bpSys = 0,
@@ -60,6 +61,8 @@ class BandVitalsApi {
       'device_id': deviceId,
       'heart_rate': hr,
       'spo2': spo2,
+      'respiration_rate': respirationRate,
+      'respiratory_rate': respirationRate,
       'temp': tempC,
       'temp_skin': tempSkin,
       'bp_systolic': bpSys,
@@ -85,7 +88,7 @@ class BandVitalsApi {
         print('[Cloud] ✓ Final disconnect ingest sent (Status: ${resp.statusCode})');
       } else {
         // ignore: avoid_print
-        print('[Cloud] ✓ Ingest sent (Status: ${resp.statusCode}) HR: $hr, SpO2: $spo2');
+        print('[Cloud] ✓ Ingest sent (Status: ${resp.statusCode}) HR: $hr, SpO2: $spo2, RR: $respirationRate');
       }
       
       return ok;

@@ -127,8 +127,24 @@ class VeepooSdk {
     await _channel.invokeMethod<void>('readCheckWear');
   }
 
+  Future<void> startDetectBreath() async {
+    await _channel.invokeMethod<void>('startDetectBreath');
+  }
+
+  Future<void> stopDetectBreath() async {
+    await _channel.invokeMethod<void>('stopDetectBreath');
+  }
+
   Future<void> readSleepData() async {
     await _channel.invokeMethod<void>('readSleepData');
+  }
+
+  Future<void> readSpo2hOrigin({int day = 0}) async {
+    await _channel.invokeMethod<void>('readSpo2hOrigin', {'day': day});
+  }
+
+  Future<void> enableAutoDetectSettings() async {
+    await _channel.invokeMethod<void>('enableAutoDetectSettings');
   }
 
   Future<void> startDetectEcg() async {

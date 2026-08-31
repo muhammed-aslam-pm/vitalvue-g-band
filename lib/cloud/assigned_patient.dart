@@ -8,6 +8,7 @@ class PatientVitalsSnapshot {
     required this.deviceId,
     required this.heartRate,
     required this.spo2,
+    this.respiratoryRate = 0,
     required this.temp,
     required this.bpSystolic,
     required this.bpDiastolic,
@@ -34,6 +35,7 @@ class PatientVitalsSnapshot {
   final String deviceId;
   final int heartRate;
   final double spo2;
+  final int respiratoryRate;
   final double temp;
   final int bpSystolic;
   final int bpDiastolic;
@@ -62,6 +64,7 @@ class PatientVitalsSnapshot {
         deviceId: j['device_id'] as String? ?? '',
         heartRate: j['heart_rate'] as int? ?? 0,
         spo2: (j['spo2'] as num?)?.toDouble() ?? 0.0,
+        respiratoryRate: (j['respiration_rate'] ?? j['respiratory_rate'] ?? j['rr'] as int?)?.toInt() ?? 0,
         temp: (j['temp'] as num?)?.toDouble() ?? 0.0,
         bpSystolic: j['bp_systolic'] as int? ?? 0,
         bpDiastolic: j['bp_diastolic'] as int? ?? 0,
