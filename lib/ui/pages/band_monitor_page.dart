@@ -201,10 +201,9 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               ],
             ),
           ),
-          // Wearing, Battery & connection chips
+          // Battery & connection chips
           if (state is BandConnectedState) ...[
-            _WearingChip(isRemoved: state.vitals.isRemoved),
-            const SizedBox(width: 8),
+            // _WearingChip(isRemoved: state.vitals.isRemoved),
             _BatteryChip(battery: state.vitals.battery),
             const SizedBox(width: 8),
           ],
@@ -245,9 +244,10 @@ class _BandMonitorPageState extends State<BandMonitorPage>
       );
     }
 
-    if (state is BandConnectedState && state.vitals.isRemoved) {
-      return _OffWristBanner(pulseController: _pulseController);
-    }
+    // Off-wrist banner temporarily disabled
+    // if (state is BandConnectedState && state.vitals.isRemoved) {
+    //   return _OffWristBanner(pulseController: _pulseController);
+    // }
 
     return const SizedBox.shrink();
   }
@@ -290,8 +290,8 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           unit: 'bpm',
           icon: Icons.favorite_rounded,
           accentColor: const Color(0xFFE53935),
-          subtitle: v.isRemoved ? 'Off-wrist' : 'Live',
-          isAlert: v.isRemoved,
+          subtitle: 'Live',
+          isAlert: false,
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'Heart Rate',
@@ -625,6 +625,7 @@ class _BackgroundGradient extends StatelessWidget {
       );
 }
 
+// ignore: unused_element
 class _WearingChip extends StatelessWidget {
   const _WearingChip({required this.isRemoved});
   final bool isRemoved;
@@ -764,6 +765,7 @@ class _ConnectionChip extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _OffWristBanner extends StatelessWidget {
   const _OffWristBanner({required this.pulseController});
   final AnimationController pulseController;

@@ -210,12 +210,12 @@ class BandSessionService {
         }
         break;
       case 'checkWear':
-        final isRemovedVal = event['isRemoved'] as bool? ?? false;
-        debugPrint('[BandSession] ⌚ checkWear isRemoved=$isRemovedVal');
-        // Only emit for off-wrist (true) — on-wrist is handled in heartRate case
-        if (isRemovedVal) {
-          _emit(_state.copyWith(isRemoved: true));
-        }
+        // Off-wrist detection temporarily disabled
+        // final isRemovedVal = event['isRemoved'] as bool? ?? false;
+        // debugPrint('[BandSession] ⌚ checkWear isRemoved=$isRemovedVal');
+        // if (isRemovedVal) {
+        //   _emit(_state.copyWith(isRemoved: true));
+        // }
         break;
       case 'sleepData':
         final total = event['totalSleepMinutes'] as int? ?? 0;

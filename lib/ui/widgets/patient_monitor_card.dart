@@ -169,9 +169,10 @@ class _ConnectionBadge extends StatelessWidget {
     if (!isConnected) {
       color = const Color(0xFF4A4A5A);
       label = 'Disconnected';
-    } else if (isRemoved) {
-      color = const Color(0xFFE53935);
-      label = 'Off-Wrist';
+    // Off-wrist detection temporarily disabled
+    // } else if (isRemoved) {
+    //   color = const Color(0xFFE53935);
+    //   label = 'Off-Wrist';
     } else {
       color = const Color(0xFF43A047);
       label = 'Connected';

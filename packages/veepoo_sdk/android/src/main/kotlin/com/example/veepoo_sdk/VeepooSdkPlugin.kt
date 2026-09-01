@@ -275,12 +275,14 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                                     put("isRemoved", false)
                                 })
                             } else if (status == EHeartStatus.STATE_HEART_WEAR_ERROR) {
-                                // Band explicitly signals incorrect wearing → immediate off-wrist
+                                // Off-wrist detection temporarily disabled
                                 consecutiveZeroCount = 0
+                                /*
                                 sendEvent(JSONObject().apply {
                                     put("type", "checkWear")
                                     put("isRemoved", true)
                                 })
+                                */
                             } else if (status == EHeartStatus.STATE_HEART_BUSY) {
                                 // Device is busy with another operation — do NOT count, do nothing
                                 Log.d(TAG, "[heartRate] Device busy, skipping count")
@@ -291,12 +293,15 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                                 // When not worn, it stays at 0 indefinitely → off-wrist after threshold.
                                 consecutiveZeroCount++
                                 Log.d(TAG, "[heartRate] No pulse tick #$consecutiveZeroCount / $ZERO_COUNT_THRESHOLD")
+                                /*
+                                // Off-wrist detection temporarily disabled
                                 if (consecutiveZeroCount >= ZERO_COUNT_THRESHOLD) {
                                     sendEvent(JSONObject().apply {
                                         put("type", "checkWear")
                                         put("isRemoved", true)
                                     })
                                 }
+                                */
                             }
                         }
                     }
