@@ -203,7 +203,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           ),
           // Battery & connection chips
           if (state is BandConnectedState) ...[
-            // _WearingChip(isRemoved: state.vitals.isRemoved),
+            _WearingChip(isRemoved: state.vitals.isRemoved),
             _BatteryChip(battery: state.vitals.battery),
             const SizedBox(width: 8),
           ],
@@ -228,6 +228,11 @@ class _BandMonitorPageState extends State<BandMonitorPage>
   // ── Connection status banner ───────────────────────────────────────────────
 
   Widget _buildConnectionBanner(BuildContext context, BandMonitorState state) {
+    // Off-wrist alert — shown on top of everything when band is removed
+    if (state is BandConnectedState && state.vitals.isRemoved) {
+      return _OffWristBanner(pulseController: _pulseController);
+    }
+
     if (state is BandConnectingState) {
       return _InfoBanner(
         color: const Color(0xFFFFA726),
@@ -243,11 +248,6 @@ class _BandMonitorPageState extends State<BandMonitorPage>
         message: 'Not connected — tap Scan to find your band.',
       );
     }
-
-    // Off-wrist banner temporarily disabled
-    // if (state is BandConnectedState && state.vitals.isRemoved) {
-    //   return _OffWristBanner(pulseController: _pulseController);
-    // }
 
     return const SizedBox.shrink();
   }

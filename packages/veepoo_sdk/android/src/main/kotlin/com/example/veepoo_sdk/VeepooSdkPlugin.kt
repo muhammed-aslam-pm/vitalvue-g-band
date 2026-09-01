@@ -251,57 +251,22 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
             }
             "startDetectHeart" -> {
                 Log.i(TAG, "[startDetectHeart] Starting heart rate detection...")
-                var consecutiveZeroCount = 0
-                // Threshold: 8 ticks with value=0 → declare off-wrist.
-                // STATE_INIT warmup on a worn band typically resolves in 2-4 ticks,
-                // but STATE_INIT when NOT worn continues indefinitely.
-                val ZERO_COUNT_THRESHOLD = 8
                 VPOperateManager.getInstance().startDetectHeart(IBleWriteResponse { },
                 object : IHeartDataListener {
                     override fun onDataChange(heartData: HeartData?) {
-                        Log.d(TAG, "[heartRate] status=${heartData?.heartStatus} value=${heartData?.data} zeroCount=$consecutiveZeroCount")
                         if (heartData != null) {
                             val status = heartData.heartStatus
                             val value = heartData.data
+                            Log.d(TAG, "[heartRate] status=$status value=$value")
                             if (value > 20) {
-                                // Valid heart rate reading → on-wrist, reset counter
-                                consecutiveZeroCount = 0
                                 sendEvent(JSONObject().apply {
                                     put("type", "heartRate")
                                     put("value", value)
                                 })
-                                sendEvent(JSONObject().apply {
-                                    put("type", "checkWear")
-                                    put("isRemoved", false)
-                                })
                             } else if (status == EHeartStatus.STATE_HEART_WEAR_ERROR) {
-                                // Off-wrist detection temporarily disabled
-                                consecutiveZeroCount = 0
-                                /*
                                 sendEvent(JSONObject().apply {
-                                    put("type", "checkWear")
-                                    put("isRemoved", true)
+                                    put("type", "wearError")
                                 })
-                                */
-                            } else if (status == EHeartStatus.STATE_HEART_BUSY) {
-                                // Device is busy with another operation — do NOT count, do nothing
-                                Log.d(TAG, "[heartRate] Device busy, skipping count")
-                            } else {
-                                // STATE_INIT or STATE_HEART_DETECT with value=0:
-                                // Both mean no valid pulse detected. Count them together.
-                                // When worn, sensor quickly resolves to STATE_HEART_NORMAL (value>20).
-                                // When not worn, it stays at 0 indefinitely → off-wrist after threshold.
-                                consecutiveZeroCount++
-                                Log.d(TAG, "[heartRate] No pulse tick #$consecutiveZeroCount / $ZERO_COUNT_THRESHOLD")
-                                /*
-                                // Off-wrist detection temporarily disabled
-                                if (consecutiveZeroCount >= ZERO_COUNT_THRESHOLD) {
-                                    sendEvent(JSONObject().apply {
-                                        put("type", "checkWear")
-                                        put("isRemoved", true)
-                                    })
-                                }
-                                */
                             }
                         }
                     }

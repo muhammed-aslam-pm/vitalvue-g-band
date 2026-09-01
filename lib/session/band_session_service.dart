@@ -49,6 +49,8 @@ class BandSessionService {
   StreamSubscription? _eventSub;
   Timer? _hrIngestTimer;   // fires every 1 min → ingest current vitals
   Timer? _otherTimer;      // fires every 5 min → restart BP / SpO2 / Temp
+  Timer? _watchdogTimer;   // fires every 2s → evaluates off-wrist status
+  DateTime _lastValidPulseTime = DateTime.now();
 
   final List<double> _recentRrIntervals = [];
 
@@ -75,6 +77,20 @@ class BandSessionService {
       } else if (rmssd > 10 && rmssd < 200) {
         _emit(_state.copyWith(hrv: rmssd));
       }
+    }
+  }
+
+  void _tickWatchdog() {
+    if (_state.connectionStatus != BleConnectionStatus.connected) return;
+    if (_state.isEcgMeasuring) return;
+
+    final now = DateTime.now();
+    final secondsSinceValidPulse = now.difference(_lastValidPulseTime).inSeconds;
+
+    // If no valid vitals/pulse received for >100 seconds, flag as removed
+    if (secondsSinceValidPulse > 100 && !_state.isRemoved) {
+      debugPrint('[BandSession] ⚠️ WATCHDOG EXPIRED: No valid pulse for ${secondsSinceValidPulse}s. Setting isRemoved=true');
+      _emit(_state.copyWith(isRemoved: true, hr: 0));
     }
   }
 
@@ -132,7 +148,7 @@ class BandSessionService {
         final hrVal = event['value'] as int;
         debugPrint('[BandSession] ❤️  heartRate=$hrVal (valid: ${hrVal > 20 && hrVal < 250})');
         if (hrVal > 20 && hrVal < 250) {
-          // Valid HR → immediately clear off-wrist status in the same emit
+          _lastValidPulseTime = DateTime.now();
           _emit(_state.copyWith(hr: hrVal, isRemoved: false));
           _processHrvFromHeartRate(hrVal);
         }
@@ -141,7 +157,8 @@ class BandSessionService {
         final spo2Val = event['value'] as int;
         debugPrint('[BandSession] 🩸 spo2=$spo2Val (valid: ${spo2Val > 50 && spo2Val <= 100})');
         if (spo2Val > 50 && spo2Val <= 100) {
-          _emit(_state.copyWith(spo2: spo2Val));
+          _lastValidPulseTime = DateTime.now();
+          _emit(_state.copyWith(spo2: spo2Val, isRemoved: false));
         }
         break;
       case 'respiratoryRate':
@@ -156,7 +173,8 @@ class BandSessionService {
         final dia = event['dia'] as int;
         debugPrint('[BandSession] 💉 bp=$sys/$dia (valid: ${sys > 40 && dia > 20})');
         if (sys > 40 && dia > 20) {
-          _emit(_state.copyWith(systolic: sys, diastolic: dia));
+          _lastValidPulseTime = DateTime.now();
+          _emit(_state.copyWith(systolic: sys, diastolic: dia, isRemoved: false));
         }
         break;
       case 'temperature':
@@ -171,6 +189,9 @@ class BandSessionService {
         }
         if (tempBaseVal > 30.0 && tempBaseVal < 45.0) {
           validSkinTemp = tempBaseVal;
+        }
+        if (validBodyTemp != null || validSkinTemp != null) {
+          _lastValidPulseTime = DateTime.now();
         }
         _emit(_state.copyWith(
           tempC: validBodyTemp ?? _state.tempC,
@@ -209,13 +230,19 @@ class BandSessionService {
           _emit(_state.copyWith(battery: batteryVal));
         }
         break;
+      case 'wearError':
+        final now = DateTime.now();
+        if (now.difference(_lastValidPulseTime).inSeconds > 30 && !_state.isRemoved) {
+          debugPrint('[BandSession] ⌚ Hardware wearError confirmed (>30s no pulse). Setting isRemoved=true');
+          _emit(_state.copyWith(isRemoved: true, hr: 0));
+        }
+        break;
       case 'checkWear':
-        // Off-wrist detection temporarily disabled
-        // final isRemovedVal = event['isRemoved'] as bool? ?? false;
-        // debugPrint('[BandSession] ⌚ checkWear isRemoved=$isRemovedVal');
-        // if (isRemovedVal) {
-        //   _emit(_state.copyWith(isRemoved: true));
-        // }
+        // Legacy event handler kept for compatibility
+        final isRemovedVal = event['isRemoved'] as bool? ?? false;
+        if (isRemovedVal && !_state.isRemoved) {
+          _emit(_state.copyWith(isRemoved: true, hr: 0));
+        }
         break;
       case 'sleepData':
         final total = event['totalSleepMinutes'] as int? ?? 0;
@@ -406,7 +433,11 @@ class BandSessionService {
       debugPrint('[BandSession] Error reading init status/vitals: $e');
     }
 
-    // Start our sequential rotation scheduler
+    // Start watchdog timer and sequential rotation scheduler
+    _lastValidPulseTime = DateTime.now();
+    _watchdogTimer?.cancel();
+    _watchdogTimer =
+        Timer.periodic(const Duration(seconds: 2), (_) => _tickWatchdog());
     _startScheduler();
 
     // ── HR ingest timer: periodic ingest ──────────────────────────────────
@@ -565,6 +596,8 @@ class BandSessionService {
   }
 
   void _handleDisconnect() {
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
     _hrIngestTimer?.cancel();
     _otherTimer?.cancel();
     _schedulerTimer?.cancel();
