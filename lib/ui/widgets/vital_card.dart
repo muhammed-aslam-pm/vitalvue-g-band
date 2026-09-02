@@ -68,13 +68,17 @@ class VitalCard extends StatelessWidget {
                   child: Icon(icon, color: accentColor, size: 20),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ],

@@ -104,7 +104,11 @@ CREATE TABLE vitals (
     if (mapped.containsKey('isIngested')) {
       mapped['isIngested'] = mapped['isIngested'] == true ? 1 : 0;
     }
-    return await db.insert('vitals', mapped);
+    return await db.insert(
+      'vitals',
+      mapped,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<List<Map<String, dynamic>>> getUningestedVitals() async {

@@ -10,8 +10,8 @@ class VitalsScheduleDurations {
     this.breathDuration = const Duration(seconds: 25),
     this.tempDuration = const Duration(seconds: 20),
     this.bpDuration = const Duration(seconds: 55),
-    this.stressDuration = const Duration(seconds: 50),
-    this.hrHrvDuration = const Duration(seconds: 130),
+    this.stressDuration = const Duration(seconds: 35),
+    this.hrHrvDuration = const Duration(seconds: 35),
     this.ingestInterval = const Duration(seconds: 60),
   });
 
@@ -50,9 +50,40 @@ class BandSessionService {
   Timer? _hrIngestTimer;   // fires every 1 min → ingest current vitals
   Timer? _otherTimer;      // fires every 5 min → restart BP / SpO2 / Temp
   Timer? _watchdogTimer;   // fires every 2s → evaluates off-wrist status
+  Timer? _wearErrorConfirmTimer; // debounces wear errors to prevent false positives on momentary strap adjustments
   DateTime _lastValidPulseTime = DateTime.now();
+  bool _currentPhaseHadValidVital = false;
+  int _consecutiveFailedPhases = 0;
 
   final List<double> _recentRrIntervals = [];
+
+  void _confirmBandRemoved([String reason = 'hardware']) {
+    _wearErrorConfirmTimer?.cancel();
+    _wearErrorConfirmTimer = null;
+    if (!_state.isRemoved) {
+      debugPrint('[BandSession] ⌚ Band removal confirmed ($reason). Setting isRemoved=true');
+      _emit(_state.copyWith(
+        isRemoved: true,
+        hr: 0,
+        spo2: 0,
+      ));
+      // Trigger immediate ingest so cloud and database receive is_removed=true without delay
+      onIngest(_state);
+    }
+  }
+
+  void _onValidVitalsReceived([String? info]) {
+    _wearErrorConfirmTimer?.cancel();
+    _wearErrorConfirmTimer = null;
+    _currentPhaseHadValidVital = true;
+    _consecutiveFailedPhases = 0;
+    _lastValidPulseTime = DateTime.now();
+    if (_state.isRemoved) {
+      debugPrint('[BandSession] ⌚ Band re-worn: valid vitals received ($info). Setting isRemoved=false');
+      _emit(_state.copyWith(isRemoved: false));
+      onIngest(_state);
+    }
+  }
 
   void _processHrvFromHeartRate(int hr) {
     if (hr <= 20 || hr >= 220) return;
@@ -87,10 +118,10 @@ class BandSessionService {
     final now = DateTime.now();
     final secondsSinceValidPulse = now.difference(_lastValidPulseTime).inSeconds;
 
-    // If no valid vitals/pulse received for >100 seconds, flag as removed
-    if (secondsSinceValidPulse > 100 && !_state.isRemoved) {
-      debugPrint('[BandSession] ⚠️ WATCHDOG EXPIRED: No valid pulse for ${secondsSinceValidPulse}s. Setting isRemoved=true');
-      _emit(_state.copyWith(isRemoved: true, hr: 0));
+    // Full rotation takes ~165s. If no valid vitals (HR, SpO2, BP, Stress, Temp, RR) received for > 180s (3 minutes), flag as removed
+    if (secondsSinceValidPulse > 180 && !_state.isRemoved) {
+      debugPrint('[BandSession] ⚠️ WATCHDOG EXPIRED: No valid vitals for ${secondsSinceValidPulse}s. Flagging band as removed.');
+      _confirmBandRemoved('watchdog_expired (${secondsSinceValidPulse}s no vitals)');
     }
   }
 
@@ -146,34 +177,40 @@ class BandSessionService {
         break;
       case 'heartRate':
         final hrVal = event['value'] as int;
-        debugPrint('[BandSession] ❤️  heartRate=$hrVal (valid: ${hrVal > 20 && hrVal < 250})');
-        if (hrVal > 20 && hrVal < 250) {
-          _lastValidPulseTime = DateTime.now();
+        final isValid = hrVal > 20 && hrVal < 250;
+        debugPrint('[BandSession] ❤️  heartRate=$hrVal (valid: $isValid)');
+        if (isValid) {
+          _onValidVitalsReceived('HR $hrVal bpm');
           _emit(_state.copyWith(hr: hrVal, isRemoved: false));
           _processHrvFromHeartRate(hrVal);
         }
         break;
       case 'spo2':
         final spo2Val = event['value'] as int;
-        debugPrint('[BandSession] 🩸 spo2=$spo2Val (valid: ${spo2Val > 50 && spo2Val <= 100})');
-        if (spo2Val > 50 && spo2Val <= 100) {
-          _lastValidPulseTime = DateTime.now();
+        final isValid = spo2Val > 50 && spo2Val <= 100;
+        debugPrint('[BandSession] 🩸 spo2=$spo2Val (valid: $isValid)');
+        if (isValid) {
+          _onValidVitalsReceived('SpO2 $spo2Val%');
           _emit(_state.copyWith(spo2: spo2Val, isRemoved: false));
         }
         break;
       case 'respiratoryRate':
         final rrVal = event['value'] as int? ?? 0;
-        debugPrint('[BandSession] 🫁 respiratoryRate=$rrVal (valid: ${rrVal >= 5 && rrVal <= 60})');
-        if (rrVal >= 5 && rrVal <= 60) {
-          _emit(_state.copyWith(respiratoryRate: rrVal));
+        final isValid = rrVal >= 5 && rrVal <= 60;
+        debugPrint('[BandSession] 🫁 respiratoryRate=$rrVal (valid: $isValid)');
+        if (isValid) {
+          _onValidVitalsReceived('RR $rrVal rpm');
+          _emit(_state.copyWith(respiratoryRate: rrVal, isRemoved: false));
         }
         break;
       case 'bloodPressure':
         final sys = event['sys'] as int;
         final dia = event['dia'] as int;
-        debugPrint('[BandSession] 💉 bp=$sys/$dia (valid: ${sys > 40 && dia > 20})');
-        if (sys > 40 && dia > 20) {
-          _lastValidPulseTime = DateTime.now();
+        // Veepoo SDK docs: systolic range [60-300], diastolic range [20-200]
+        final isValid = sys >= 60 && dia >= 20;
+        debugPrint('[BandSession] 💉 bp=$sys/$dia (valid: $isValid)');
+        if (isValid) {
+          _onValidVitalsReceived('BP $sys/$dia');
           _emit(_state.copyWith(systolic: sys, diastolic: dia, isRemoved: false));
         }
         break;
@@ -190,9 +227,8 @@ class BandSessionService {
         if (tempBaseVal > 30.0 && tempBaseVal < 45.0) {
           validSkinTemp = tempBaseVal;
         }
-        if (validBodyTemp != null || validSkinTemp != null) {
-          _lastValidPulseTime = DateTime.now();
-        }
+        // Note: Temperature sensor does not measure pulse and retains heat after removal.
+        // It must NOT reset _lastValidPulseTime or clear isRemoved.
         _emit(_state.copyWith(
           tempC: validBodyTemp ?? _state.tempC,
           tempSkin: validSkinTemp ?? _state.tempSkin,
@@ -213,14 +249,16 @@ class BandSessionService {
         final hrvVal = event['value'] as int? ?? 0;
         debugPrint('[BandSession] 💓 hrv=$hrvVal');
         if (hrvVal > 0) {
-          _emit(_state.copyWith(hrv: hrvVal));
+          _onValidVitalsReceived('HRV $hrvVal ms');
+          _emit(_state.copyWith(hrv: hrvVal, isRemoved: false));
         }
         break;
       case 'stress':
         final stressVal = event['value'] as int? ?? 0;
         debugPrint('[BandSession] ☯️ stress=$stressVal');
         if (stressVal > 0) {
-          _emit(_state.copyWith(stress: stressVal));
+          _onValidVitalsReceived('Stress $stressVal');
+          _emit(_state.copyWith(stress: stressVal, isRemoved: false));
         }
         break;
       case 'battery':
@@ -231,17 +269,13 @@ class BandSessionService {
         }
         break;
       case 'wearError':
-        final now = DateTime.now();
-        if (now.difference(_lastValidPulseTime).inSeconds > 30 && !_state.isRemoved) {
-          debugPrint('[BandSession] ⌚ Hardware wearError confirmed (>30s no pulse). Setting isRemoved=true');
-          _emit(_state.copyWith(isRemoved: true, hr: 0));
-        }
+        debugPrint('[BandSession] ℹ️ wearError event received (ignored in favor of multi-phase vital verification)');
         break;
       case 'checkWear':
         // Legacy event handler kept for compatibility
         final isRemovedVal = event['isRemoved'] as bool? ?? false;
         if (isRemovedVal && !_state.isRemoved) {
-          _emit(_state.copyWith(isRemoved: true, hr: 0));
+          _confirmBandRemoved('checkWear');
         }
         break;
       case 'sleepData':
@@ -551,13 +585,14 @@ class BandSessionService {
           await _sdk.startDetectHeart();
         },
         stop: () async {
-          // Keep HR running
+          await _sdk.stopDetectHeart();
         },
       ),
     ];
 
     final current = phases[_cyclePhase % phases.length];
     debugPrint('[BandSession] 🔄 Scheduler Phase: ${current.name} (duration: ${current.duration.inSeconds}s)');
+    _currentPhaseHadValidVital = false;
     
     try {
       await current.start();
@@ -570,6 +605,21 @@ class BandSessionService {
         await current.stop();
       } catch (e) {
         debugPrint('[BandSession] Error stopping phase ${current.name}: $e');
+      }
+
+      // Check if this phase recorded valid vitals (skip Temperature as it is non-pulsatile)
+      if (current.name != 'Temperature') {
+        if (!_currentPhaseHadValidVital) {
+          _consecutiveFailedPhases++;
+          debugPrint('[BandSession] ⚠️ Phase ${current.name} ended with NO valid vitals (consecutive failed phases: $_consecutiveFailedPhases)');
+          final elapsed = DateTime.now().difference(_lastValidPulseTime).inSeconds;
+          // Require at least 3 consecutive failed pulsatile phases AND >= 150s elapsed
+          if (_consecutiveFailedPhases >= 3 && elapsed >= 150 && !_state.isRemoved) {
+            _confirmBandRemoved('no vitals across $_consecutiveFailedPhases consecutive phases (${elapsed}s elapsed)');
+          }
+        } else {
+          _consecutiveFailedPhases = 0;
+        }
       }
 
       // Trigger an immediate ingest after SpO2, Temp, BP, HRV or Stress completes to persist new values right away
@@ -598,6 +648,8 @@ class BandSessionService {
   void _handleDisconnect() {
     _watchdogTimer?.cancel();
     _watchdogTimer = null;
+    _wearErrorConfirmTimer?.cancel();
+    _wearErrorConfirmTimer = null;
     _hrIngestTimer?.cancel();
     _otherTimer?.cancel();
     _schedulerTimer?.cancel();

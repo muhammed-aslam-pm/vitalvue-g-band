@@ -19,6 +19,7 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   bool _enableTts = true;
   bool _enablePush = true;
+  bool _enableAccidentalDisconnect = false;
 
   @override
   void initState() {
@@ -29,10 +30,13 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<void> _loadSettings() async {
     final tts = await BackgroundPreferences.getEnableTts();
     final push = await BackgroundPreferences.getEnablePush();
+    final accidental =
+        await BackgroundPreferences.getEnableAccidentalDisconnectAlert();
     if (mounted) {
       setState(() {
         _enableTts = tts;
         _enablePush = push;
+        _enableAccidentalDisconnect = accidental;
       });
     }
   }
@@ -177,54 +181,97 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             ],
 
-            if (!profile.isPatient) ...[
-              const SizedBox(height: 16),
-              _buildSection(
-                title: 'Alert Settings',
-                children: [
-                  Material(
-                    color: Colors.transparent,
-                    child: SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      activeThumbColor: const Color(0xFF1A73E8),
-                      title: Text(
-                        'Voice Announcements',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 15, fontWeight: FontWeight.w500),
-                      ),
-                      subtitle: Text(
-                        'Verbal read-out of critical alerts',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 13),
-                      ),
-                      value: _enableTts,
-                      onChanged: (val) async {
-                        setState(() => _enableTts = val);
-                        await BackgroundPreferences.setEnableTts(val);
-                      },
+            const SizedBox(height: 16),
+            _buildSection(
+              title: 'Alert Settings',
+              children: [
+                Material(
+                  color: Colors.transparent,
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    activeThumbColor: const Color(0xFF1A73E8),
+                    title: Text(
+                      'Voice Announcements',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500),
                     ),
-                  ),
-                  Material(
-                    color: Colors.transparent,
-                    child: SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      activeThumbColor: const Color(0xFF1A73E8),
-                      title: Text(
-                        'Push Notifications',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 15, fontWeight: FontWeight.w500),
-                      ),
-                      subtitle: Text(
-                        'Heads-up banners for critical alerts',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 13),
-                      ),
-                      value: _enablePush,
-                      onChanged: (val) async {
-                        setState(() => _enablePush = val);
-                        await BackgroundPreferences.setEnablePush(val);
-                      },
+                    subtitle: Text(
+                      'Verbal read-out of warnings and critical alerts',
+                      style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.6),
+                          fontSize: 13),
                     ),
+                    value: _enableTts,
+                    onChanged: (val) async {
+                      setState(() => _enableTts = val);
+                      await BackgroundPreferences.setEnableTts(val);
+                    },
                   ),
-                ],
-              ),
-            ],
+                ),
+                Material(
+                  color: Colors.transparent,
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    activeThumbColor: const Color(0xFF1A73E8),
+                    title: Text(
+                      'Push Notifications',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500),
+                    ),
+                    subtitle: Text(
+                      'Heads-up banners for warnings and critical alerts',
+                      style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.6),
+                          fontSize: 13),
+                    ),
+                    value: _enablePush,
+                    onChanged: (val) async {
+                      setState(() => _enablePush = val);
+                      await BackgroundPreferences.setEnablePush(val);
+                    },
+                  ),
+                ),
+                Material(
+                  color: Colors.transparent,
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    activeThumbColor: const Color(0xFF1A73E8),
+                    title: Text(
+                      'Accidental Disconnection Alert',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500),
+                    ),
+                    subtitle: Text(
+                      'Alert, beep sound, and push notification when band disconnects accidentally',
+                      style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.6),
+                          fontSize: 13),
+                    ),
+                    value: _enableAccidentalDisconnect,
+                    onChanged: (val) async {
+                      setState(() => _enableAccidentalDisconnect = val);
+                      await BackgroundPreferences
+                          .setEnableAccidentalDisconnectAlert(val);
+                    },
+                  ),
+                ),
+              ],
+            ),
 
             const SizedBox(height: 48),
             SizedBox(

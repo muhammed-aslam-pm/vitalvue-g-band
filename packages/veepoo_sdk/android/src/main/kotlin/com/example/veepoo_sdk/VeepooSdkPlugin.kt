@@ -181,31 +181,7 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                     Log.e(TAG, "[settingSpo2hAutoDetect] Error: ${e.message}")
                 }
 
-                // 2. Breath Break & Hypoxia Remind Setting
-                try {
-                    val sbbr = BreathBreakRemindSetting().apply {
-                        setStartHour(0)
-                        setStartMinute(0)
-                        setEndHour(23)
-                        setEndMinute(59)
-                        setOprateSetting(1)
-                        setOpenStatus(1)
-                        setDuringTime(10)
-                        setRemindTime(20)
-                        setMinOxygen(85)
-                    }
-                    VPOperateManager.getInstance().settingSBBR(IBleWriteResponse { code ->
-                        Log.d(TAG, "[settingSBBR] writeResponse code=$code")
-                    }, object : ISpo2hBreathBreakRemainListener {
-                        override fun onSpo2hBreathBreakRemainDataChange(data: BreathBreakRemindData?) {
-                            Log.i(TAG, "[settingSBBR] onSpo2hBreathBreakRemainDataChange data=$data")
-                        }
-                    }, sbbr)
-                } catch (e: Exception) {
-                    Log.e(TAG, "[settingSBBR] Error: ${e.message}")
-                }
-
-                // 3. Custom Settings for Auto Detect (Heart, BP, Temp, HRV, Stress, SpO2)
+                // 2. Custom Settings for Auto Detect (Heart, BP, Temp, HRV, Stress, SpO2)
                 try {
                     val customSetting = CustomSetting(true, true, true, true, true).apply {
                         setOpenAutoHeartDetect(true)
@@ -263,10 +239,6 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                                     put("type", "heartRate")
                                     put("value", value)
                                 })
-                            } else if (status == EHeartStatus.STATE_HEART_WEAR_ERROR) {
-                                sendEvent(JSONObject().apply {
-                                    put("type", "wearError")
-                                })
                             }
                         }
                     }
@@ -282,7 +254,7 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                 VPOperateManager.getInstance().startDetectSPO2H(IBleWriteResponse { },
                 object : ISpo2hDataListener {
                     override fun onSpO2HADataChange(spo2Data: Spo2hData?) {
-                        Log.d(TAG, "[spo2] state=${spo2Data?.spState} value=${spo2Data?.value} rate=${spo2Data?.rateValue}")
+                        Log.d(TAG, "[spo2] state=${spo2Data?.spState} deviceState=${spo2Data?.deviceState} value=${spo2Data?.value} rate=${spo2Data?.rateValue}")
                         if (spo2Data != null) {
                             if (spo2Data.value > 0) {
                                 sendEvent(JSONObject().apply {
@@ -338,15 +310,22 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                 VPOperateManager.getInstance().startDetectBP(IBleWriteResponse { },
                 object : IBPDetectDataListener {
                     override fun onDataChange(bpData: BpData?) {
+                        val status = bpData?.status
                         val high = bpData?.highPressure ?: 0
                         val low = bpData?.lowPressure ?: 0
-                        Log.d(TAG, "[bloodPressure] status=${bpData?.status} progress=${bpData?.progress} high=$high low=$low")
-                        if (bpData != null && high > 0 && low > 0) {
-                            sendEvent(JSONObject().apply {
-                                put("type", "bloodPressure")
-                                put("sys", high)
-                                put("dia", low)
-                            })
+                        val progress = bpData?.progress ?: 0
+                        Log.d(TAG, "[bloodPressure] status=$status progress=$progress high=$high low=$low")
+                        if (bpData != null && progress >= 100) {
+                            // Veepoo SDK valid systolic range [60-300], diastolic range [20-200]
+                            if (high >= 60 && low >= 20) {
+                                sendEvent(JSONObject().apply {
+                                    put("type", "bloodPressure")
+                                    put("sys", high)
+                                    put("dia", low)
+                                })
+                            } else {
+                                Log.w(TAG, "[bloodPressure] Reading $high/$low discarded (inconclusive measurement, not a wear error)")
+                            }
                         }
                     }
                 }, EBPDetectModel.DETECT_MODEL_PUBLIC)
