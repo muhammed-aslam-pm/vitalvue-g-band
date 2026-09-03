@@ -224,8 +224,8 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
     final service = FlutterBackgroundService();
     if (!await service.isRunning()) {
       await service.startService();
-      // Give the background isolate time to register event listeners.
-      await Future.delayed(const Duration(milliseconds: 800));
+      // Give the background isolate time to register event listeners on cold start.
+      await Future.delayed(const Duration(milliseconds: 2000));
     }
     
     service.invoke('connectDevice', {
@@ -241,7 +241,8 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
     await _scanSub?.cancel();
     _scanSub = null;
     await _sdk.stopScan();
-    FlutterBackgroundService().invoke('stopService');
+    // Disconnect the BLE peripheral while keeping the background service warm and responsive for instant reconnect
+    FlutterBackgroundService().invoke('disconnectDevice');
     emit(const BandDisconnectedState());
   }
 

@@ -30,6 +30,9 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
     private lateinit var context: Context
     private val mainHandler = Handler(Looper.getMainLooper())
     private var currentMac: String? = null
+    private var currentConnectStatusListener: IABleConnectStatusListener? = null
+    private var isHeartDetecting = false
+    private var heartRetryRunnable: Runnable? = null
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         context = flutterPluginBinding.applicationContext
@@ -56,8 +59,15 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                     Log.w(TAG, "[connect] Error stopping scan before connect: ${e.message}")
                 }
                 
+                // Unregister any previous connect status listener to avoid duplicate callbacks
+                currentConnectStatusListener?.let { listener ->
+                    try {
+                        VPOperateManager.getInstance().unregisterConnectStatusListener(mac, listener)
+                    } catch (_: Exception) {}
+                }
+
                 // Register connection status listener immediately to avoid missing callbacks
-                VPOperateManager.getInstance().registerConnectStatusListener(mac, object : IABleConnectStatusListener() {
+                val listener = object : IABleConnectStatusListener() {
                     override fun onConnectStatusChanged(mac: String?, status: Int) {
                         Log.i(TAG, "[connectionState] mac=$mac status=$status")
                         sendEvent(JSONObject().apply {
@@ -65,7 +75,9 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                             put("state", status)
                         })
                     }
-                })
+                }
+                currentConnectStatusListener = listener
+                VPOperateManager.getInstance().registerConnectStatusListener(mac, listener)
 
                 val isReplied = java.util.concurrent.atomic.AtomicBoolean(false)
                 VPOperateManager.getInstance().connectDevice(mac, { code, profile, isOadModel ->
@@ -121,6 +133,15 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
             }
             "disconnect" -> {
                 val isReplied = java.util.concurrent.atomic.AtomicBoolean(false)
+                try {
+                    currentMac?.let { mac ->
+                        currentConnectStatusListener?.let { listener ->
+                            VPOperateManager.getInstance().unregisterConnectStatusListener(mac, listener)
+                        }
+                    }
+                } catch (_: Exception) {}
+                currentConnectStatusListener = null
+
                 VPOperateManager.getInstance().disconnectWatch(IBleWriteResponse {
                     if (isReplied.compareAndSet(false, true)) {
                         mainHandler.post { result.success(true) }
@@ -227,25 +248,13 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
             }
             "startDetectHeart" -> {
                 Log.i(TAG, "[startDetectHeart] Starting heart rate detection...")
-                VPOperateManager.getInstance().startDetectHeart(IBleWriteResponse { },
-                object : IHeartDataListener {
-                    override fun onDataChange(heartData: HeartData?) {
-                        if (heartData != null) {
-                            val status = heartData.heartStatus
-                            val value = heartData.data
-                            Log.d(TAG, "[heartRate] status=$status value=$value")
-                            if (value > 20) {
-                                sendEvent(JSONObject().apply {
-                                    put("type", "heartRate")
-                                    put("value", value)
-                                })
-                            }
-                        }
-                    }
-                })
+                isHeartDetecting = true
+                startHeartDetectionWithRetry()
                 result.success(true)
             }
             "stopDetectHeart" -> {
+                isHeartDetecting = false
+                heartRetryRunnable?.let { mainHandler.removeCallbacks(it) }
                 VPOperateManager.getInstance().stopDetectHeart(IBleWriteResponse { })
                 result.success(true)
             }
@@ -621,6 +630,42 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
             put("wakeCount", wake)
             put("sleepQuality", quality)
         })
+    }
+
+    private fun startHeartDetectionWithRetry() {
+        heartRetryRunnable?.let { mainHandler.removeCallbacks(it) }
+        VPOperateManager.getInstance().startDetectHeart(IBleWriteResponse { },
+            object : IHeartDataListener {
+                override fun onDataChange(heartData: HeartData?) {
+                    if (heartData != null) {
+                        val status = heartData.heartStatus
+                        val value = heartData.data
+                        Log.d(TAG, "[heartRate] status=$status value=$value")
+                        if (value > 20) {
+                            sendEvent(JSONObject().apply {
+                                put("type", "heartRate")
+                                put("value", value)
+                            })
+                        } else if (status == EHeartStatus.STATE_HEART_WEAR_ERROR && isHeartDetecting) {
+                            Log.i(TAG, "[heartRate] Sensor reported STATE_HEART_WEAR_ERROR during active detection; resetting & retrying...")
+                            val r = Runnable {
+                                if (isHeartDetecting) {
+                                    try {
+                                        VPOperateManager.getInstance().stopDetectHeart(IBleWriteResponse { })
+                                    } catch (_: Exception) {}
+                                    mainHandler.postDelayed({
+                                        if (isHeartDetecting) {
+                                            startHeartDetectionWithRetry()
+                                        }
+                                    }, 400)
+                                }
+                            }
+                            heartRetryRunnable = r
+                            mainHandler.postDelayed(r, 1000)
+                        }
+                    }
+                }
+            })
     }
 
     private fun readSpo2hOriginFromDay(dayNumber: Int, callback: (latestSpo2: Int, latestRr: Int) -> Unit) {

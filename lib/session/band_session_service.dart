@@ -118,8 +118,8 @@ class BandSessionService {
     final now = DateTime.now();
     final secondsSinceValidPulse = now.difference(_lastValidPulseTime).inSeconds;
 
-    // Full rotation takes ~165s. If no valid vitals (HR, SpO2, BP, Stress, Temp, RR) received for > 180s (3 minutes), flag as removed
-    if (secondsSinceValidPulse > 180 && !_state.isRemoved) {
+    // Full rotation takes ~165s. If no valid vitals (HR, SpO2, BP, Stress) received for > 270s (4.5 minutes / ~1.6 rotations), flag as removed
+    if (secondsSinceValidPulse > 270 && !_state.isRemoved) {
       debugPrint('[BandSession] ⚠️ WATCHDOG EXPIRED: No valid vitals for ${secondsSinceValidPulse}s. Flagging band as removed.');
       _confirmBandRemoved('watchdog_expired (${secondsSinceValidPulse}s no vitals)');
     }
@@ -455,14 +455,6 @@ class BandSessionService {
       debugPrint('[BandSession] Step 5: Reading step counter...');
       await _sdk.readSportStep();
       await Future<void>.delayed(const Duration(milliseconds: 600));
-
-      debugPrint('[BandSession] Step 6: Reading sleep data...');
-      await _sdk.readSleepData();
-      await Future<void>.delayed(const Duration(milliseconds: 600));
-
-      debugPrint('[BandSession] Step 7: Reading SpO2 & Respiration origin data...');
-      await _sdk.readSpo2hOrigin();
-      await Future<void>.delayed(const Duration(milliseconds: 600));
     } catch (e) {
       debugPrint('[BandSession] Error reading init status/vitals: $e');
     }
@@ -475,19 +467,10 @@ class BandSessionService {
     _startScheduler();
 
     // ── HR ingest timer: periodic ingest ──────────────────────────────────
-    // Ingests the current BandState to cloud & DB.
+    // Ingests the current BandState to cloud & DB without interrupting active BLE sensors.
     _hrIngestTimer?.cancel();
     _hrIngestTimer = Timer.periodic(scheduleDurations.ingestInterval, (_) async {
       if (_state.connectionStatus == BleConnectionStatus.connected) {
-        try {
-          // Non-blocking quick reads (step, battery, sleep, SpO2/RR origin)
-          await _sdk.readSportStep();
-          await _sdk.readBattery();
-          await _sdk.readSleepData();
-          await _sdk.readSpo2hOrigin();
-        } catch (e) {
-          debugPrint('[BandSession] Error reading status/vitals: $e');
-        }
         debugPrint('[BandSession] ⏱ Routine ingest (${scheduleDurations.ingestInterval.inSeconds}s): hr=${_state.hr} spo2=${_state.spo2} rr=${_state.respiratoryRate} temp=${_state.tempC} bp=${_state.systolic}/${_state.diastolic} hrv=${_state.hrv} stress=${_state.stress} steps=${_state.steps} battery=${_state.battery}% isRemoved=${_state.isRemoved} sleep=${_state.totalSleepMinutes}m');
         onIngest(_state);
       }
@@ -496,9 +479,11 @@ class BandSessionService {
     debugPrint('[BandSession] ── INIT PHASE COMPLETE ──');
   }
 
-  void _startScheduler() {
+  void _startScheduler() async {
     _schedulerTimer?.cancel();
     _cyclePhase = 0;
+    // Allow BLE bus to settle for 500ms before starting Phase 0 (Heart Rate & HRV)
+    await Future.delayed(const Duration(milliseconds: 500));
     _runNextPhase();
   }
 
@@ -506,13 +491,28 @@ class BandSessionService {
     if (_state.connectionStatus != BleConnectionStatus.connected) return;
 
     // Define sequential phases to prevent PPG green/red LED clashes.
-    // Total cycle duration defaults to 300 seconds (5 minutes)
-    // 0: SpO2 (25s) - Measures Blood Oxygen & Respiration Rate
-    // 1: Temp (20s)
-    // 2: BP (55s)
-    // 3: Stress (50s)
-    // 4: HR & Dynamic HRV (150s)
+    // 0: HR & Dynamic HRV (35s) - Measured first immediately upon connection!
+    // 1: SpO2 & Respiration Rate (20s)
+    // 2: Temperature (20s)
+    // 3: Blood Pressure (55s)
+    // 4: Stress (35s)
     final phases = [
+      _MeasurementPhase(
+        name: 'Heart Rate & HRV',
+        duration: scheduleDurations.hrHrvDuration,
+        start: () async {
+          await _sdk.stopDetectSPO2();
+          await _sdk.stopDetectBP();
+          await _sdk.stopDetectTemp();
+          await _sdk.stopDetectPressure();
+          await _sdk.stopDetectHeart();
+          await Future.delayed(const Duration(milliseconds: 600));
+          await _sdk.startDetectHeart();
+        },
+        stop: () async {
+          await _sdk.stopDetectHeart();
+        },
+      ),
       _MeasurementPhase(
         name: 'SpO2',
         duration: scheduleDurations.spo2Duration,
@@ -521,7 +521,8 @@ class BandSessionService {
           await _sdk.stopDetectBP();
           await _sdk.stopDetectTemp();
           await _sdk.stopDetectPressure();
-          await Future.delayed(const Duration(milliseconds: 300));
+          await _sdk.stopDetectSPO2();
+          await Future.delayed(const Duration(milliseconds: 600));
           await _sdk.startDetectSPO2();
         },
         stop: () async {
@@ -532,11 +533,12 @@ class BandSessionService {
         name: 'Temperature',
         duration: scheduleDurations.tempDuration,
         start: () async {
+          await _sdk.stopDetectHeart();
           await _sdk.stopDetectSPO2();
           await _sdk.stopDetectBP();
           await _sdk.stopDetectPressure();
-          await Future.delayed(const Duration(milliseconds: 300));
-          await _sdk.startDetectHeart();
+          await _sdk.stopDetectTemp();
+          await Future.delayed(const Duration(milliseconds: 600));
           await _sdk.startDetectTemp();
         },
         stop: () async {
@@ -547,11 +549,12 @@ class BandSessionService {
         name: 'Blood Pressure',
         duration: scheduleDurations.bpDuration,
         start: () async {
+          await _sdk.stopDetectHeart();
           await _sdk.stopDetectSPO2();
           await _sdk.stopDetectTemp();
           await _sdk.stopDetectPressure();
-          await Future.delayed(const Duration(milliseconds: 300));
-          await _sdk.startDetectHeart();
+          await _sdk.stopDetectBP();
+          await Future.delayed(const Duration(milliseconds: 600));
           await _sdk.startDetectBP();
         },
         stop: () async {
@@ -562,30 +565,16 @@ class BandSessionService {
         name: 'Stress',
         duration: scheduleDurations.stressDuration,
         start: () async {
+          await _sdk.stopDetectHeart();
           await _sdk.stopDetectSPO2();
           await _sdk.stopDetectBP();
           await _sdk.stopDetectTemp();
-          await Future.delayed(const Duration(milliseconds: 300));
-          await _sdk.startDetectHeart();
+          await _sdk.stopDetectPressure();
+          await Future.delayed(const Duration(milliseconds: 600));
           await _sdk.startDetectPressure();
         },
         stop: () async {
           await _sdk.stopDetectPressure();
-        },
-      ),
-      _MeasurementPhase(
-        name: 'Heart Rate & HRV',
-        duration: scheduleDurations.hrHrvDuration,
-        start: () async {
-          await _sdk.stopDetectSPO2();
-          await _sdk.stopDetectBP();
-          await _sdk.stopDetectTemp();
-          await _sdk.stopDetectPressure();
-          await Future.delayed(const Duration(milliseconds: 300));
-          await _sdk.startDetectHeart();
-        },
-        stop: () async {
-          await _sdk.stopDetectHeart();
         },
       ),
     ];
@@ -613,8 +602,8 @@ class BandSessionService {
           _consecutiveFailedPhases++;
           debugPrint('[BandSession] ⚠️ Phase ${current.name} ended with NO valid vitals (consecutive failed phases: $_consecutiveFailedPhases)');
           final elapsed = DateTime.now().difference(_lastValidPulseTime).inSeconds;
-          // Require at least 3 consecutive failed pulsatile phases AND >= 150s elapsed
-          if (_consecutiveFailedPhases >= 3 && elapsed >= 150 && !_state.isRemoved) {
+          // Require at least 4 consecutive failed pulsatile phases AND >= 180s elapsed
+          if (_consecutiveFailedPhases >= 4 && elapsed >= 180 && !_state.isRemoved) {
             _confirmBandRemoved('no vitals across $_consecutiveFailedPhases consecutive phases (${elapsed}s elapsed)');
           }
         } else {
@@ -622,13 +611,20 @@ class BandSessionService {
         }
       }
 
-      // Trigger an immediate ingest after SpO2, Temp, BP, HRV or Stress completes to persist new values right away
-      if (current.name != 'Heart Rate' && _state.connectionStatus == BleConnectionStatus.connected) {
+      // Trigger an immediate ingest after each phase completes to persist new values right away
+      if (_state.connectionStatus == BleConnectionStatus.connected) {
         debugPrint('[BandSession] ⏱ Immediate ingest post-${current.name} completion');
         onIngest(_state);
       }
 
       _cyclePhase++;
+      if (_cyclePhase % phases.length == 0) {
+        // Between full measurement cycles: refresh battery and steps safely without heavy sleep dump
+        try {
+          await _sdk.readBattery();
+          await _sdk.readSportStep();
+        } catch (_) {}
+      }
       _runNextPhase();
     });
   }

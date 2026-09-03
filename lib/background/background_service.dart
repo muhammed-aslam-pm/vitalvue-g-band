@@ -464,10 +464,6 @@ void onStart(ServiceInstance service) async {
   // --- PATIENT BLE MONITORING LOGIC ---
   BandSessionService? session;
 
-  final patientTts = FlutterTts();
-  await patientTts.setVolume(1.0);
-  await patientTts.setSpeechRate(0.5);
-
   bool wasConnected = false;
   bool isManualDisconnect = false;
   bool wasRemoved = false;
@@ -485,6 +481,10 @@ void onStart(ServiceInstance service) async {
     patientBandRemovalTimer?.cancel();
     await session?.disconnect();
   });
+
+  final patientTts = FlutterTts();
+  patientTts.setVolume(1.0);
+  patientTts.setSpeechRate(0.5);
 
   service.on('connectDevice').listen((event) async {
     if (event == null) return;
