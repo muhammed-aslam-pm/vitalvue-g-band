@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:veepoo_sdk/veepoo_sdk.dart';
+
 
 import '../cloud/band_vitals_api.dart';
 import '../protocol/veepoo_protocol.dart';
@@ -85,8 +87,22 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
     on<_BandStateUpdated>((event, emit) {
       final s = event.state;
       if (s.connectionStatus == BleConnectionStatus.disconnected) {
+        if (state is! BandDisconnectedState && state is! BandIdleState) {
+          Sentry.addBreadcrumb(Breadcrumb(
+            message: 'Band disconnected',
+            category: 'ble',
+            level: SentryLevel.warning,
+          ));
+        }
         emit(const BandDisconnectedState());
       } else {
+        if (state is! BandConnectedState) {
+          Sentry.addBreadcrumb(Breadcrumb(
+            message: 'Band connected',
+            category: 'ble',
+            level: SentryLevel.info,
+          ));
+        }
         emit(BandConnectedState(s));
       }
     });
@@ -179,6 +195,7 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
   // ── Scan ──────────────────────────────────────────────────────────────────
 
   Future<void> _onStartScan(StartScan _, Emitter<BandMonitorState> emit) async {
+    Sentry.addBreadcrumb(Breadcrumb(message: 'Started band scan', category: 'ble'));
     emit(const BandScanningState());
     await _scanSub?.cancel();
 
@@ -219,6 +236,10 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
     _scanSub = null;
     await _sdk.stopScan();
 
+    Sentry.addBreadcrumb(Breadcrumb(
+      message: 'Connecting to band ${event.macAddress}',
+      category: 'ble',
+    ));
     emit(BandConnectingState(event.deviceName));
     
     final service = FlutterBackgroundService();
@@ -243,6 +264,7 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
     await _sdk.stopScan();
     // Disconnect the BLE peripheral while keeping the background service warm and responsive for instant reconnect
     FlutterBackgroundService().invoke('disconnectDevice');
+    Sentry.addBreadcrumb(Breadcrumb(message: 'User initiated disconnect', category: 'ble'));
     emit(const BandDisconnectedState());
   }
 

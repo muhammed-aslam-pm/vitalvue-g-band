@@ -30,6 +30,8 @@ class BandSessionService {
     required this.deviceId,
     required PersonalInfo personalInfo,
     required this.onIngest,
+    this.onHistoryRecords,
+    this.onHistoryComplete,
     this.scheduleDurations = const VitalsScheduleDurations(),
   }) : _personalInfo = personalInfo;
 
@@ -37,6 +39,8 @@ class BandSessionService {
   final String deviceId;
   final PersonalInfo _personalInfo;
   final Future<void> Function(BandState state) onIngest;
+  final Future<void> Function(List<Map<String, dynamic>> records)? onHistoryRecords;
+  final Future<void> Function()? onHistoryComplete;
   final VitalsScheduleDurations scheduleDurations;
 
   final VeepooSdk _sdk = VeepooSdk();
@@ -413,6 +417,27 @@ class BandSessionService {
           stress: pressureIndex > 0 ? pressureIndex : _state.stress,
         ));
         break;
+      case 'originVitalsHistory':
+        final rawRecords = event['records'] as List<dynamic>?;
+        if (rawRecords != null && rawRecords.isNotEmpty) {
+          final mapped = rawRecords.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          debugPrint('[BandSession] 📦 Received ${mapped.length} historical 5-minute vitals from band');
+          onHistoryRecords?.call(mapped);
+        }
+        break;
+      case 'originHrvHistory':
+      case 'originSpo2History':
+        final rawRecords = event['records'] as List<dynamic>?;
+        if (rawRecords != null && rawRecords.isNotEmpty) {
+          final mapped = rawRecords.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          debugPrint('[BandSession] 📦 Received ${mapped.length} auxiliary history items ($type) from band');
+          onHistoryRecords?.call(mapped);
+        }
+        break;
+      case 'originDataComplete':
+        debugPrint('[BandSession] 🏁 Band historical data reading complete');
+        onHistoryComplete?.call();
+        break;
       default:
         debugPrint('[BandSession] Unknown event type: $type, data=$event');
         break;
@@ -455,6 +480,9 @@ class BandSessionService {
       debugPrint('[BandSession] Step 5: Reading step counter...');
       await _sdk.readSportStep();
       await Future<void>.delayed(const Duration(milliseconds: 600));
+
+      debugPrint('[BandSession] Step 6: Reading 5-minute historical origin vitals from band (all days)...');
+      await _sdk.readOriginData(day: -1);
     } catch (e) {
       debugPrint('[BandSession] Error reading init status/vitals: $e');
     }

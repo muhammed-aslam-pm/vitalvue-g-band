@@ -43,6 +43,7 @@ dependencies:
   audioplayers: ^6.1.0
   veepoo_sdk:
     path: packages/veepoo_sdk
+  sentry_flutter: ^9.30.0
 
 dev_dependencies:
   flutter_test:

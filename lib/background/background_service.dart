@@ -4,6 +4,8 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
+
 
 import '../auth/auth_token_store.dart';
 import 'background_preferences.dart';
@@ -13,6 +15,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:vibration/vibration.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../session/band_session_service.dart';
+import 'package:veepoo_sdk/veepoo_sdk.dart';
 import '../protocol/veepoo_protocol.dart';
 import '../auth/auth_repository.dart';
 import '../auth/auth_interceptor.dart';
@@ -86,6 +89,34 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
+
+  const defaultDsn =
+      'https://dd4d1111c317b961e3f1f6e80430ea9a@o4512067849945088.ingest.us.sentry.io/4512067856105472';
+  await SentryFlutter.init(
+    (options) {
+      options.dsn = const String.fromEnvironment('SENTRY_DSN', defaultValue: defaultDsn);
+      options.tracesSampleRate = 1.0;
+    },
+  );
+  
+  PlatformDispatcher.instance.onError = (error, stack) {
+    Sentry.captureException(error, stackTrace: stack, withScope: (scope) => scope.setTag('isolate', 'background'));
+    return true;
+  };
+  FlutterError.onError = (details) {
+    Sentry.captureException(details.exception, stackTrace: details.stack, withScope: (scope) => scope.setTag('isolate', 'background'));
+  };
+  VeepooSdk.onError = (error, stack, {action, context}) {
+    Sentry.captureException(
+      error,
+      stackTrace: stack,
+      withScope: (scope) {
+        scope.setTag('isolate', 'background');
+        if (action != null) scope.setTag('action', action);
+        if (context != null) scope.setContexts('veepoo', context);
+      },
+    );
+  };
 
   // Set up notifications for background updates
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -501,6 +532,113 @@ void onStart(ServiceInstance service) async {
     final profile = await BackgroundPreferences.getProfile();
     if (profile == null) return;
 
+    Future<void> syncPendingVitals({
+      required BandVitalsApi api,
+      required VitalsDatabase db,
+      required int patientId,
+      required String deviceId,
+      required int battery,
+      required bool isConnected,
+      required bool isRemoved,
+    }) async {
+      try {
+        while (true) {
+          final uningested = await db.getUningestedVitals(limit: 200);
+          if (uningested.isEmpty) break;
+
+          debugPrint('[Background] Found ${uningested.length} uningested vital records to sync');
+
+          if (uningested.length == 1) {
+            // Single vital record: use single ingest endpoint
+            final row = uningested.first;
+            final id = row['_id'] as int?;
+            final ts = row['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
+            final recordedAt = DateTime.fromMillisecondsSinceEpoch(ts, isUtc: true);
+
+            final success = await api.ingest(
+              patientId: row['patient_id'] as int? ?? patientId,
+              deviceId: (row['device_id'] as String?)?.isNotEmpty == true
+                  ? row['device_id'] as String
+                  : deviceId,
+              hr: (row['hr'] as int?) ?? 0,
+              spo2: (row['spo2'] as int?) ?? 0,
+              respirationRate: (row['respirationRate'] as int?) ?? 0,
+              tempC: (row['tempC'] as num?)?.toDouble() ?? 0.0,
+              tempSkin: (row['tempSkin'] as num?)?.toDouble() ?? 0.0,
+              bpSys: (row['bpSys'] as int?) ?? 0,
+              bpDia: (row['bpDia'] as int?) ?? 0,
+              hrv: (row['hrv'] as int?) ?? 0,
+              stress: (row['stress'] ?? '0').toString(),
+              steps: (row['steps'] as int?) ?? 0,
+              calories: (row['calories'] as num?)?.toDouble() ?? 0.0,
+              distanceKm: (row['distanceKm'] as num?)?.toDouble() ?? 0.0,
+              battery: (row['battery'] as int?) ?? battery,
+              phoneBattery: -1,
+              isConnected: isConnected,
+              isRemoved: (row['isRemoved'] == 1) || isRemoved,
+              recordedAt: recordedAt,
+            );
+
+            if (success && id != null) {
+              await db.markAsIngested(id);
+            }
+            break;
+          } else {
+            // Multiple records (bulk history / backlog): use bulk ingest API
+            final ids = <int>[];
+            final payloads = <Map<String, dynamic>>[];
+
+            for (final row in uningested) {
+              final id = row['_id'] as int?;
+              if (id != null) ids.add(id);
+
+              final ts = row['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
+              final recordedAt = DateTime.fromMillisecondsSinceEpoch(ts, isUtc: true);
+
+              payloads.add(BandVitalsApi.buildVitalPayload(
+                patientId: row['patient_id'] as int? ?? patientId,
+                deviceId: (row['device_id'] as String?)?.isNotEmpty == true
+                    ? row['device_id'] as String
+                    : deviceId,
+                hr: (row['hr'] as int?) ?? 0,
+                spo2: (row['spo2'] as int?) ?? 0,
+                respirationRate: (row['respirationRate'] as int?) ?? 0,
+                tempC: (row['tempC'] as num?)?.toDouble() ?? 0.0,
+                tempSkin: (row['tempSkin'] as num?)?.toDouble() ?? 0.0,
+                bpSys: (row['bpSys'] as int?) ?? 0,
+                bpDia: (row['bpDia'] as int?) ?? 0,
+                hrv: (row['hrv'] as int?) ?? 0,
+                stress: (row['stress'] ?? '0').toString(),
+                steps: (row['steps'] as int?) ?? 0,
+                calories: (row['calories'] as num?)?.toDouble() ?? 0.0,
+                distanceKm: (row['distanceKm'] as num?)?.toDouble() ?? 0.0,
+                battery: (row['battery'] as int?) ?? battery,
+                phoneBattery: -1,
+                isConnected: isConnected,
+                isRemoved: (row['isRemoved'] == 1) || isRemoved,
+                recordedAt: recordedAt,
+              ));
+            }
+
+            final success = await api.bulkIngest(payloads);
+            if (success) {
+              await db.markMultipleAsIngested(ids);
+              debugPrint('[Background] ✓ Successfully bulk-ingested ${ids.length} records');
+              if (uningested.length < 200) break;
+            } else {
+              debugPrint('[Background] ✗ Bulk ingest failed, keeping records uningested for next retry');
+              break;
+            }
+          }
+        }
+
+        await db.deleteOldVitals();
+      } catch (e, stackTrace) {
+        debugPrint('[Background] Error during syncPendingVitals: $e');
+        Sentry.captureException(e, stackTrace: stackTrace);
+      }
+    }
+
     session = BandSessionService(
       patientId: profile.id,
       deviceId: deviceId,
@@ -556,33 +694,81 @@ void onStart(ServiceInstance service) async {
           'isIngested': 0,
         };
 
-        final id = await db.insertVital(vitalData);
+        await db.insertVital(vitalData);
 
-        final success = await api.ingest(
+        await syncPendingVitals(
+          api: api,
+          db: db,
           patientId: profile.id,
           deviceId: deviceId,
-          hr: state.hr,
-          spo2: state.spo2,
-          respirationRate: state.respiratoryRate,
-          tempC: state.tempC,
-          tempSkin: state.tempSkin,
-          bpSys: state.systolic ?? 0,
-          bpDia: state.diastolic ?? 0,
-          hrv: state.hrv ?? 0,
-          stress: (state.stress ?? 0).toString(),
-          steps: state.steps,
-          calories: state.calories,
-          distanceKm: state.distanceKm,
           battery: state.battery,
-          isRemoved: state.isRemoved,
           isConnected: state.connectionStatus == BleConnectionStatus.connected,
+          isRemoved: state.isRemoved,
         );
+      },
+      onHistoryRecords: (records) async {
+        final db = VitalsDatabase.instance;
+        debugPrint('[Background] Persisting ${records.length} historical records from band to SQLite...');
+        for (final rec in records) {
+          final hr = rec['hr'] as int? ?? 0;
+          final sys = rec['bpSys'] as int? ?? 0;
+          final dia = rec['bpDia'] as int? ?? 0;
+          final tempC = (rec['tempC'] as num?)?.toDouble() ?? 0.0;
+          final tempSkin = (rec['tempSkin'] as num?)?.toDouble() ?? 0.0;
+          final steps = rec['steps'] as int? ?? 0;
+          final calories = (rec['calories'] as num?)?.toDouble() ?? 0.0;
+          final distanceKm = (rec['distanceKm'] as num?)?.toDouble() ?? 0.0;
+          final stress = (rec['stress'] ?? 0).toString();
+          final spo2 = rec['spo2'] as int? ?? 0;
+          final rr = rec['respirationRate'] as int? ?? 0;
+          final ts = rec['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
 
-        if (success) {
-          await db.markAsIngested(id);
+          // Guard against empty readings
+          if (hr == 0 && sys == 0 && tempC == 0.0 && steps == 0) continue;
+
+          await db.upsertVital({
+            'timestamp': ts,
+            'patient_id': profile.id,
+            'device_id': deviceId,
+            'hr': hr,
+            'spo2': spo2,
+            'respirationRate': rr,
+            'tempC': tempC,
+            'tempSkin': tempSkin,
+            'bpSys': sys,
+            'bpDia': dia,
+            'hrv': rec['hrv'] as int? ?? 0,
+            'stress': stress,
+            'steps': steps,
+            'calories': calories,
+            'distanceKm': distanceKm,
+            'battery': -1,
+            'isRemoved': false,
+            'isIngested': 0,
+          });
         }
-
-        await db.deleteOldVitals();
+      },
+      onHistoryComplete: () async {
+        debugPrint('[Background] 🏁 Flushing on-band historical vitals via bulk-ingest...');
+        final store = AuthTokenStore();
+        final repo = AuthRepository(
+            baseUrl: 'https://vitalvue-api.genesysailabs.com', store: store);
+        final interceptor =
+            AuthInterceptor(store: store, repository: repo, onLogout: () {});
+        final api = BandVitalsApi(
+          baseUrl: 'https://vitalvue-api.genesysailabs.com',
+          authInterceptor: interceptor,
+        );
+        final currentState = session?.currentState ?? const BandState();
+        await syncPendingVitals(
+          api: api,
+          db: VitalsDatabase.instance,
+          patientId: profile.id,
+          deviceId: deviceId,
+          battery: currentState.battery,
+          isConnected: currentState.connectionStatus == BleConnectionStatus.connected,
+          isRemoved: currentState.isRemoved,
+        );
       },
     );
 
@@ -820,6 +1006,17 @@ void onStart(ServiceInstance service) async {
         }).catchError((e) {
           debugPrint('[Background] Error calling changeDevice: $e');
         });
+
+        // Flush any uningested vitals history accumulated while offline/disconnected
+        await syncPendingVitals(
+          api: api,
+          db: VitalsDatabase.instance,
+          patientId: profile.id,
+          deviceId: deviceId,
+          battery: session?.currentState.battery ?? -1,
+          isConnected: true,
+          isRemoved: session?.currentState.isRemoved ?? false,
+        );
       } catch (_) {}
     }
   });

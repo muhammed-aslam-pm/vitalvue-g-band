@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "gband_monitor",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "args": [
+                "--dart-define=SENTRY_DSN=https://dd4d1111c317b961e3f1f6e80430ea9a@o4512067849945088.ingest.us.sentry.io/4512067856105472"
+            ]
+        }
+    ]
+}

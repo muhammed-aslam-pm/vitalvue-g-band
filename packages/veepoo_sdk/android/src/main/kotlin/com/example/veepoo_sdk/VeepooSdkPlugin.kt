@@ -491,6 +491,11 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                 }
                 result.success(true)
             }
+            "readOriginData" -> {
+                val day = call.argument<Int>("day") ?: 0
+                readOriginDataFromDay(day)
+                result.success(true)
+            }
             "startDetectEcg" -> {
                 Log.i(TAG, "[startDetectEcg] Starting ECG detection...")
                 try {
@@ -691,6 +696,216 @@ class VeepooSdkPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHan
                 callback(latestSpo2, latestRr)
             }
         }, dayNumber)
+    }
+
+    private fun readOriginDataFromDay(dayNumber: Int) {
+        val readAllDays = dayNumber < 0
+        Log.i(TAG, "[readOriginData] Reading 5-minute historical origin data from band (allDays=$readAllDays, day=$dayNumber)...")
+        val listener = object : IOriginData3Listener, IOriginDataListener {
+            override fun onOriginFiveMinuteListDataChange(originList: List<OriginData3>?) {
+                if (originList.isNullOrEmpty()) return
+                Log.i(TAG, "[readOriginData] Received ${originList.size} 5-minute OriginData3 items from band")
+                val recordsArray = org.json.JSONArray()
+                for (item in originList) {
+                    val mTime = item.getmTime()
+                    val cal = mTime?.toCalendar()
+                    val timestamp = cal?.timeInMillis ?: ((mTime?.timestampSeconds?.toLong() ?: 0L) * 1000L)
+                    if (timestamp <= 0L) continue
+
+                    // Extract SpO2 & RR from array if available
+                    var spo2 = 0
+                    val oxyArray = item.oxygens
+                    if (oxyArray != null) {
+                        for (ox in oxyArray) {
+                            if (ox in 51..100) {
+                                spo2 = ox
+                                break
+                            }
+                        }
+                    }
+
+                    var rr = 0
+                    val rrArray = item.resRates
+                    if (rrArray != null) {
+                        for (r in rrArray) {
+                            if (r in 5..60) {
+                                rr = r
+                                break
+                            }
+                        }
+                    }
+
+                    // For OriginData3, heart rate can be in ppgs array or ecgs array or rateValue
+                    var hr = item.rateValue
+                    if (hr <= 0 && item.ppgs != null) {
+                        for (p in item.ppgs) {
+                            if (p in 30..220) {
+                                hr = p
+                                break
+                            }
+                        }
+                    }
+                    if (hr <= 0 && item.ecgs != null) {
+                        for (e in item.ecgs) {
+                            if (e in 30..220) {
+                                hr = e
+                                break
+                            }
+                        }
+                    }
+
+                    val sys = item.highValue
+                    val dia = item.lowValue
+                    val temp = item.temperature
+                    val tempSkin = item.baseTemperature
+                    val steps = item.stepValue
+                    val cals = item.calValue
+                    val dis = item.disValue
+                    val stress = item.pressure
+
+                    // Guard: skip entries where all vitals are zero
+                    if (hr == 0 && sys == 0 && temp <= 0f && steps == 0 && spo2 == 0) continue
+
+                    val obj = JSONObject().apply {
+                        put("timestamp", timestamp)
+                        put("hr", hr)
+                        put("bpSys", sys)
+                        put("bpDia", dia)
+                        put("tempC", temp.toDouble())
+                        put("tempSkin", tempSkin.toDouble())
+                        put("steps", steps)
+                        put("calories", cals)
+                        put("distanceKm", dis)
+                        put("stress", stress)
+                        put("spo2", spo2)
+                        put("respirationRate", rr)
+                    }
+                    recordsArray.put(obj)
+                }
+
+                if (recordsArray.length() > 0) {
+                    sendEvent(JSONObject().apply {
+                        put("type", "originVitalsHistory")
+                        put("records", recordsArray)
+                    })
+                }
+            }
+
+            override fun onOringinFiveMinuteDataChange(item: OriginData?) {
+                if (item == null) return
+                val mTime = item.getmTime()
+                val cal = mTime?.toCalendar()
+                val timestamp = cal?.timeInMillis ?: ((mTime?.timestampSeconds?.toLong() ?: 0L) * 1000L)
+                if (timestamp <= 0L) return
+
+                val hr = item.rateValue
+                val sys = item.highValue
+                val dia = item.lowValue
+                val temp = item.temperature
+                val tempSkin = item.baseTemperature
+                val steps = item.stepValue
+                val cals = item.calValue
+                val dis = item.disValue
+
+                if (hr == 0 && sys == 0 && temp <= 0f && steps == 0) return
+
+                val recordsArray = org.json.JSONArray()
+                val obj = JSONObject().apply {
+                    put("timestamp", timestamp)
+                    put("hr", hr)
+                    put("bpSys", sys)
+                    put("bpDia", dia)
+                    put("tempC", temp.toDouble())
+                    put("tempSkin", tempSkin.toDouble())
+                    put("steps", steps)
+                    put("calories", cals)
+                    put("distanceKm", dis)
+                    put("stress", 0)
+                    put("spo2", 0)
+                    put("respirationRate", 0)
+                }
+                recordsArray.put(obj)
+
+                sendEvent(JSONObject().apply {
+                    put("type", "originVitalsHistory")
+                    put("records", recordsArray)
+                })
+            }
+
+            override fun onOriginHalfHourDataChange(halfHourData: OriginHalfHourData?) {}
+
+            override fun onOringinHalfHourDataChange(originHalfHourData: OriginHalfHourData?) {}
+
+            override fun onOriginHRVOriginListDataChange(hrvList: List<HRVOriginData>?) {
+                if (hrvList.isNullOrEmpty()) return
+                Log.i(TAG, "[readOriginData] Received ${hrvList.size} HRVOriginData items")
+                val recordsArray = org.json.JSONArray()
+                for (item in hrvList) {
+                    val cal = item.getmTime()?.toCalendar()
+                    val timestamp = cal?.timeInMillis ?: 0L
+                    if (timestamp <= 0L || item.hrvValue <= 0) continue
+                    recordsArray.put(JSONObject().apply {
+                        put("timestamp", timestamp)
+                        put("hrv", item.hrvValue)
+                    })
+                }
+                if (recordsArray.length() > 0) {
+                    sendEvent(JSONObject().apply {
+                        put("type", "originHrvHistory")
+                        put("records", recordsArray)
+                    })
+                }
+            }
+
+            override fun onOriginSpo2OriginListDataChange(spo2List: List<Spo2hOriginData>?) {
+                if (spo2List.isNullOrEmpty()) return
+                Log.i(TAG, "[readOriginData] Received ${spo2List.size} Spo2hOriginData items")
+                val recordsArray = org.json.JSONArray()
+                for (item in spo2List) {
+                    val cal = item.getmTime()?.toCalendar()
+                    val timestamp = cal?.timeInMillis ?: 0L
+                    if (timestamp <= 0L) continue
+                    recordsArray.put(JSONObject().apply {
+                        put("timestamp", timestamp)
+                        put("spo2", item.oxygenValue)
+                        put("respirationRate", item.respirationRate)
+                        put("hr", item.heartValue)
+                    })
+                }
+                if (recordsArray.length() > 0) {
+                    sendEvent(JSONObject().apply {
+                        put("type", "originSpo2History")
+                        put("records", recordsArray)
+                    })
+                }
+            }
+
+            override fun onReadOriginProgress(progress: Float) {
+                Log.d(TAG, "[readOriginData] progress=$progress")
+            }
+
+            override fun onReadOriginProgressDetail(day: Int, date: String?, current: Int, total: Int) {
+                Log.d(TAG, "[readOriginData] day=$day date=$date current=$current total=$total")
+            }
+
+            override fun onReadOriginComplete() {
+                Log.i(TAG, "[readOriginData] Completed reading historical data from band")
+                sendEvent(JSONObject().apply {
+                    put("type", "originDataComplete")
+                    put("day", dayNumber)
+                })
+            }
+        }
+
+        val writeResp = IBleWriteResponse { code ->
+            Log.d(TAG, "[readOriginData] writeCode=$code")
+        }
+
+        if (readAllDays) {
+            VPOperateManager.getInstance().readOriginData(writeResp, listener, 3)
+        } else {
+            VPOperateManager.getInstance().readOriginDataSingleDay(writeResp, listener, dayNumber, 1, 3)
+        }
     }
 
     private fun sendSpo2hOriginEvents(spo2: Int, rr: Int) {

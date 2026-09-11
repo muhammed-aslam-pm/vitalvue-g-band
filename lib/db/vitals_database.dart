@@ -83,6 +83,15 @@ CREATE TABLE vitals (
       );
 
       if (existing.isNotEmpty) {
+        final existingMap = Map<String, dynamic>.from(existing.first);
+        mapped.forEach((key, val) {
+          if (val == 0 || val == 0.0 || val == null || val == '0' || val == '') {
+            final oldVal = existingMap[key];
+            if (oldVal != null && oldVal != 0 && oldVal != 0.0 && oldVal != '0' && oldVal != '') {
+              mapped[key] = oldVal;
+            }
+          }
+        });
         return await db.update(
           'vitals',
           mapped,
@@ -111,12 +120,14 @@ CREATE TABLE vitals (
     );
   }
 
-  Future<List<Map<String, dynamic>>> getUningestedVitals() async {
+  Future<List<Map<String, dynamic>>> getUningestedVitals({int? limit}) async {
     final db = await instance.database;
     return await db.query(
       'vitals',
       where: 'isIngested = ?',
       whereArgs: [0],
+      orderBy: 'timestamp ASC',
+      limit: limit,
     );
   }
 
@@ -139,6 +150,21 @@ CREATE TABLE vitals (
       where: '_id = ?',
       whereArgs: [id],
     );
+  }
+
+  Future<void> markMultipleAsIngested(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final db = await instance.database;
+    final batch = db.batch();
+    for (final id in ids) {
+      batch.update(
+        'vitals',
+        {'isIngested': 1},
+        where: '_id = ?',
+        whereArgs: [id],
+      );
+    }
+    await batch.commit(noResult: true);
   }
 
   Future<void> deleteOldVitals() async {

@@ -2,8 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+typedef VeepooErrorHandler = void Function(
+  Object error,
+  StackTrace stackTrace, {
+  String? action,
+  Map<String, dynamic>? context,
+});
 
 class VeepooSdk {
+  static VeepooErrorHandler? onError;
   static const MethodChannel _channel = MethodChannel('veepoo_methods');
   static const EventChannel _eventChannel = EventChannel('veepoo_events');
 
@@ -15,8 +22,9 @@ class VeepooSdk {
         try {
           final data = jsonDecode(event) as Map<String, dynamic>;
           _eventsController.add(data);
-        } catch (e) {
+        } catch (e, stackTrace) {
           debugPrint('Error parsing veepoo event: $e');
+          onError?.call(e, stackTrace, action: 'parse_event', context: {'payload': event});
         }
       }
     });
@@ -37,8 +45,13 @@ class VeepooSdk {
   }
 
   Future<bool> connect(String macAddress) async {
-    final result = await _channel.invokeMethod<bool>('connect', {'mac': macAddress});
-    return result ?? false;
+    try {
+      final result = await _channel.invokeMethod<bool>('connect', {'mac': macAddress});
+      return result ?? false;
+    } on PlatformException catch (e, stackTrace) {
+      onError?.call(e, stackTrace, action: 'connect', context: {'mac': macAddress});
+      return false;
+    }
   }
 
   Future<bool> confirmDevicePwd(String pwd) async {
@@ -141,6 +154,10 @@ class VeepooSdk {
 
   Future<void> readSpo2hOrigin({int day = 0}) async {
     await _channel.invokeMethod<void>('readSpo2hOrigin', {'day': day});
+  }
+
+  Future<void> readOriginData({int day = 0}) async {
+    await _channel.invokeMethod<void>('readOriginData', {'day': day});
   }
 
   Future<void> enableAutoDetectSettings() async {
