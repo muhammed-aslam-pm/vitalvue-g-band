@@ -163,6 +163,20 @@ class BandVitalsApi {
         // ignore: avoid_print
         print('[Cloud] ✓ Ingest sent (Status: ${resp.statusCode}) HR: $hr, SpO2: $spo2, RR: $respirationRate');
       }
+
+      Sentry.addBreadcrumb(Breadcrumb(
+        message: isConnected
+            ? 'Live ingest sent (Status: ${resp.statusCode}, HR: $hr, SpO2: $spo2, RR: $respirationRate)'
+            : 'Disconnect ingest sent (Status: ${resp.statusCode})',
+        category: 'cloud.ingest',
+        level: ok ? SentryLevel.info : SentryLevel.warning,
+        data: {
+          'patient_id': patientId,
+          'device_id': deviceId,
+          'is_connected': isConnected,
+          'status_code': resp.statusCode,
+        },
+      ));
       
       return ok;
     } on DioException catch (e, stackTrace) {
@@ -176,6 +190,9 @@ class BandVitalsApi {
           'url': _endpoint,
           'patient_id': patientId,
           'device_id': deviceId,
+          'is_connected': isConnected,
+          'status_code': e.response?.statusCode,
+          'response_data': e.response?.data?.toString(),
         }),
       );
 
@@ -191,21 +208,32 @@ class BandVitalsApi {
   }
 
   /// Bulk ingest client — POST /api/v1/vitals/bulk-ingest
-  /// Takes a list of vital payloads and sends them in batches (default 50 items per batch).
+  /// Takes a list of vital payloads and sends them in batches (default 25 items per batch).
+  /// Optional [onBatchSuccess] is invoked immediately after each batch succeeds,
+  /// passing the sublist start and end indexes so caller can mark them as ingested right away.
   Future<bool> bulkIngest(
     List<Map<String, dynamic>> payloads, {
-    int batchSize = 50,
+    int batchSize = 25,
+    Future<void> Function(int startIndex, int endIndex)? onBatchSuccess,
   }) async {
     if (payloads.isEmpty) return true;
 
-    final transaction = Sentry.startTransaction('bulkIngest', 'task');
+    final transaction = Sentry.startTransaction(
+      'bulkIngest',
+      'task',
+      description: 'Bulk ingest ${payloads.length} vitals in batches of $batchSize',
+    );
+    transaction.setData('total_payloads', payloads.length);
+    transaction.setData('batch_size', batchSize);
 
     // Process in batches to avoid payload size limitations
     for (int i = 0; i < payloads.length; i += batchSize) {
       final end = (i + batchSize < payloads.length) ? i + batchSize : payloads.length;
       final batch = payloads.sublist(i, end);
 
-      final span = transaction.startChild('http.client', description: 'POST $_bulkEndpoint batch ${i ~/ batchSize}');
+      final span = transaction.startChild('http.client', description: 'POST $_bulkEndpoint batch ${i ~/ batchSize + 1}');
+      span.setData('batch_size', batch.length);
+      span.setData('batch_index', i ~/ batchSize);
 
       try {
         final resp = await _dio.post(_bulkEndpoint, data: batch);
@@ -220,8 +248,30 @@ class BandVitalsApi {
           transaction.finish(status: const SpanStatus.internalError());
           return false;
         }
+
+        // Immediately notify caller that this batch succeeded
+        if (onBatchSuccess != null) {
+          try {
+            await onBatchSuccess(i, end);
+          } catch (e) {
+            // ignore: avoid_print
+            print('[Cloud] Warning: onBatchSuccess callback error: $e');
+          }
+        }
+
+        Sentry.addBreadcrumb(Breadcrumb(
+          message: 'Bulk ingest batch ${i ~/ batchSize + 1} succeeded (${batch.length} items)',
+          category: 'cloud.bulk_ingest',
+          level: SentryLevel.info,
+          data: {
+            'batch_index': i ~/ batchSize,
+            'batch_size': batch.length,
+            'status_code': resp.statusCode,
+          },
+        ));
+
         // ignore: avoid_print
-        print('[Cloud] ✓ Bulk ingest sent (Status: ${resp.statusCode}) Batch ${(i ~/ batchSize) + 1} (${batch.length} items)');
+        print('[Cloud] ✓ Bulk ingest sent (Status: ${resp.statusCode}) Batch ${i ~/ batchSize + 1} (${batch.length} items)');
       } on DioException catch (e, stackTrace) {
         span.status = const SpanStatus.internalError();
         span.finish();
@@ -232,6 +282,10 @@ class BandVitalsApi {
           withScope: (scope) => scope.setContexts('Request', {
             'url': _bulkEndpoint,
             'batch_size': batch.length,
+            'batch_index': i ~/ batchSize,
+            'total_payloads': payloads.length,
+            'status_code': e.response?.statusCode,
+            'response_data': e.response?.data?.toString(),
           }),
         );
 
@@ -250,15 +304,43 @@ class BandVitalsApi {
     final url = '${_baseUrl}api/v1/patients/me/change-device';
     // ignore: avoid_print
     print('[Cloud] Attempting to change device to: $newDeviceId');
+    final span = Sentry.getSpan()?.startChild(
+      'http.client',
+      description: 'PATCH $url',
+    );
     try {
       final resp = await _dio.patch(url, data: {
         'new_device_id': newDeviceId,
       });
-      return resp.statusCode != null && resp.statusCode! < 300;
-    } on DioException catch (e) {
+      final ok = resp.statusCode != null && resp.statusCode! < 300;
+      span?.status = ok ? const SpanStatus.ok() : const SpanStatus.internalError();
+      span?.finish();
+
+      Sentry.addBreadcrumb(Breadcrumb(
+        message: 'changeDevice PATCH response: status=${resp.statusCode}, ok=$ok',
+        category: 'cloud.device',
+        level: ok ? SentryLevel.info : SentryLevel.warning,
+        data: {'new_device_id': newDeviceId, 'status_code': resp.statusCode},
+      ));
+
+      return ok;
+    } on DioException catch (e, stackTrace) {
+      span?.status = const SpanStatus.internalError();
+      span?.finish();
+
+      Sentry.captureException(
+        e,
+        stackTrace: stackTrace,
+        withScope: (scope) => scope.setContexts('Request', {
+          'url': url,
+          'new_device_id': newDeviceId,
+          'status_code': e.response?.statusCode,
+          'response_data': e.response?.data?.toString(),
+        }),
+      );
+
       // ignore: avoid_print
       print('[Cloud] ✗ changeDevice failed: ${e.message}');
-      // Gracefully handle 405 or other non-fatal API response codes
       return false;
     }
   }

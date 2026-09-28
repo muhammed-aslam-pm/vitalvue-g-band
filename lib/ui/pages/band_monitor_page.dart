@@ -127,6 +127,12 @@ class _BandMonitorPageState extends State<BandMonitorPage>
                           child: _buildAppBar(context, bandState, profile),
                         ),
                         SliverToBoxAdapter(
+                          child: _SyncStatusBanner(
+                            isSyncing: bandState.isSyncing,
+                            pendingCount: bandState.syncRemaining,
+                          ),
+                        ),
+                        SliverToBoxAdapter(
                           child: _buildConnectionBanner(context, bandState),
                         ),
                         SliverPadding(
@@ -862,5 +868,160 @@ class _InfoBanner extends StatelessWidget {
         ],
       ),
     ).animate().fadeIn(duration: 300.ms).slideY(begin: -0.1, end: 0);
+  }
+}
+
+
+// ── Animated Sync Status Banner ─────────────────────────────────────────────
+
+class _SyncStatusBanner extends StatefulWidget {
+  final bool isSyncing;
+  final int pendingCount;
+
+  const _SyncStatusBanner({
+    required this.isSyncing,
+    required this.pendingCount,
+  });
+
+  @override
+  State<_SyncStatusBanner> createState() => _SyncStatusBannerState();
+}
+
+class _SyncStatusBannerState extends State<_SyncStatusBanner> {
+  bool _showCompleted = false;
+
+  @override
+  void didUpdateWidget(covariant _SyncStatusBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // When syncing transitions from true to false, show brief 'Synced' state before collapsing
+    if (oldWidget.isSyncing && !widget.isSyncing && oldWidget.pendingCount > 0) {
+      setState(() {
+        _showCompleted = true;
+      });
+      Future.delayed(const Duration(milliseconds: 1400), () {
+        if (mounted) {
+          setState(() {
+            _showCompleted = false;
+          });
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isVisible = widget.isSyncing || _showCompleted;
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOutCubic,
+      child: isVisible
+          ? Container(
+              margin: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: _showCompleted
+                    ? const Color(0xFF1B5E20).withValues(alpha: 0.18)
+                    : const Color(0xFF00BFA5).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: _showCompleted
+                      ? const Color(0xFF43A047).withValues(alpha: 0.4)
+                      : const Color(0xFF00BFA5).withValues(alpha: 0.35),
+                  width: 1.2,
+                ),
+              ),
+              child: Row(
+                children: [
+                  if (_showCompleted)
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: Color(0xFF43A047),
+                      size: 20,
+                    )
+                  else
+                    const Icon(
+                      Icons.sync_rounded,
+                      color: Color(0xFF00BFA5),
+                      size: 20,
+                    )
+                        .animate(onPlay: (controller) => controller.repeat())
+                        .rotate(duration: 1600.ms),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _showCompleted
+                              ? 'Backlog Vitals Synced'
+                              : 'Syncing Vitals to Cloud',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _showCompleted
+                                ? const Color(0xFF2E7D32)
+                                : const Color(0xFF00897B),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _showCompleted
+                              ? 'All historical records uploaded successfully'
+                              : (widget.pendingCount > 0
+                                  ? '${widget.pendingCount} records queued for cloud ingest…'
+                                  : 'Uploading historical readings…'),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.65),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!_showCompleted)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF00BFA5).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF00BFA5),
+                              shape: BoxShape.circle,
+                            ),
+                          )
+                              .animate(
+                                  onPlay: (controller) => controller.repeat(reverse: true))
+                              .scale(begin: const Offset(0.7, 0.7), end: const Offset(1.3, 1.3)),
+                          const SizedBox(width: 5),
+                          Text(
+                            'SYNCING',
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF00796B),
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            )
+          : const SizedBox.shrink(),
+    );
   }
 }

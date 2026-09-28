@@ -32,6 +32,14 @@ final class _ScanResultReceived extends BandMonitorEvent {
   List<Object?> get props => [result.mac];
 }
 
+final class _SyncStatusUpdated extends BandMonitorEvent {
+  final bool isSyncing;
+  final int syncRemaining;
+  const _SyncStatusUpdated(this.isSyncing, this.syncRemaining);
+  @override
+  List<Object?> get props => [isSyncing, syncRemaining];
+}
+
 // ── BLoC ──────────────────────────────────────────────────────────────────────
 
 /// Bridges [BandSessionService] ↔ UI.
@@ -81,9 +89,66 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
           for (final r in current.results) r.mac: r,
         };
         seen[event.result.mac] = event.result;
-        emit(BandScanningState(results: seen.values.toList()));
+        emit(BandScanningState(
+          results: seen.values.toList(),
+          isSyncing: _isSyncing,
+          syncRemaining: _syncRemaining,
+        ));
       }
     });
+
+    on<_SyncStatusUpdated>((event, emit) {
+      final wasSyncing = _isSyncing;
+      _isSyncing = event.isSyncing;
+      _syncRemaining = event.syncRemaining;
+
+      if (_isSyncing && !wasSyncing) {
+        Sentry.addBreadcrumb(Breadcrumb(
+          message: 'UI Sync Status: Started bulk sync (${event.syncRemaining} records pending)',
+          category: 'ui.sync',
+          level: SentryLevel.info,
+          data: {'pending': event.syncRemaining},
+        ));
+      } else if (!_isSyncing && wasSyncing) {
+        Sentry.addBreadcrumb(Breadcrumb(
+          message: 'UI Sync Status: Bulk sync completed or idle',
+          category: 'ui.sync',
+          level: SentryLevel.info,
+        ));
+      }
+
+      if (state is BandConnectedState) {
+        emit((state as BandConnectedState).copyWith(
+          isSyncing: _isSyncing,
+          syncRemaining: _syncRemaining,
+        ));
+      } else if (state is BandScanningState) {
+        emit((state as BandScanningState).copyWith(
+          isSyncing: _isSyncing,
+          syncRemaining: _syncRemaining,
+        ));
+      } else if (state is BandConnectingState) {
+        final current = state as BandConnectingState;
+        emit(BandConnectingState(
+          current.deviceName,
+          isSyncing: _isSyncing,
+          syncRemaining: _syncRemaining,
+        ));
+      } else if (state is BandDisconnectedState) {
+        final current = state as BandDisconnectedState;
+        emit(BandDisconnectedState(
+          reason: current.reason,
+          isSyncing: _isSyncing,
+          syncRemaining: _syncRemaining,
+        ));
+      } else {
+        emit(BandIdleState(
+          isSyncing: _isSyncing,
+          syncRemaining: _syncRemaining,
+        ));
+      }
+    });
+
     on<_BandStateUpdated>((event, emit) {
       final s = event.state;
       if (s.connectionStatus == BleConnectionStatus.disconnected) {
@@ -94,7 +159,10 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
             level: SentryLevel.warning,
           ));
         }
-        emit(const BandDisconnectedState());
+        emit(BandDisconnectedState(
+          isSyncing: _isSyncing,
+          syncRemaining: _syncRemaining,
+        ));
       } else {
         if (state is! BandConnectedState) {
           Sentry.addBreadcrumb(Breadcrumb(
@@ -103,8 +171,20 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
             level: SentryLevel.info,
           ));
         }
-        emit(BandConnectedState(s));
+        emit(BandConnectedState(
+          s,
+          isSyncing: _isSyncing,
+          syncRemaining: _syncRemaining,
+        ));
       }
+    });
+
+    // Listen to background service sync status
+    _syncSub = FlutterBackgroundService().on('sync_status').listen((data) {
+      if (data == null) return;
+      final isSyncing = data['isSyncing'] as bool? ?? false;
+      final pending = data['pending'] as int? ?? 0;
+      add(_SyncStatusUpdated(isSyncing, pending));
     });
 
     // Listen to background service updates
@@ -173,6 +253,10 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
         ecgAdcPoints: rawAdc,
         lastEcgResult: ecgResult,
         lastEcgDiagnosis: ecgDiag,
+        consistencyScore: (data['consistencyScore'] as num?)?.toDouble() ?? 100.0,
+        cycleCount: data['cycleCount'] as int? ?? 0,
+        activePhase: data['activePhase'] as String? ?? '',
+        vitalGapWarning: data['vitalGapWarning'] as String?,
       );
       
       if (!isClosed) add(_BandStateUpdated(state));
@@ -189,14 +273,18 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
   
   final VeepooSdk _sdk = VeepooSdk();
 
+  bool _isSyncing = false;
+  int _syncRemaining = 0;
+
   StreamSubscription<Map<String, dynamic>?>? _bgSub;
+  StreamSubscription<Map<String, dynamic>?>? _syncSub;
   StreamSubscription<Map<String, dynamic>>? _scanSub;
 
   // ── Scan ──────────────────────────────────────────────────────────────────
 
   Future<void> _onStartScan(StartScan _, Emitter<BandMonitorState> emit) async {
     Sentry.addBreadcrumb(Breadcrumb(message: 'Started band scan', category: 'ble'));
-    emit(const BandScanningState());
+    emit(BandScanningState(isSyncing: _isSyncing, syncRemaining: _syncRemaining));
     await _scanSub?.cancel();
 
     // Listen to sdk events for scanResult
@@ -215,7 +303,7 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
     await _scanSub?.cancel();
     _scanSub = null;
     await _sdk.stopScan();
-    emit(const BandIdleState());
+    emit(BandIdleState(isSyncing: _isSyncing, syncRemaining: _syncRemaining));
   }
 
   // ── Context ───────────────────────────────────────────────────────────────
@@ -236,11 +324,15 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
     _scanSub = null;
     await _sdk.stopScan();
 
+    Sentry.configureScope((scope) {
+      scope.setTag('ble_remote_id', event.macAddress);
+      scope.setTag('ble_name', event.deviceName);
+    });
     Sentry.addBreadcrumb(Breadcrumb(
-      message: 'Connecting to band ${event.macAddress}',
+      message: 'Connecting to band ${event.macAddress} (${event.deviceName})',
       category: 'ble',
     ));
-    emit(BandConnectingState(event.deviceName));
+    emit(BandConnectingState(event.deviceName, isSyncing: _isSyncing, syncRemaining: _syncRemaining));
     
     final service = FlutterBackgroundService();
     if (!await service.isRunning()) {
@@ -265,7 +357,9 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
     // Disconnect the BLE peripheral while keeping the background service warm and responsive for instant reconnect
     FlutterBackgroundService().invoke('disconnectDevice');
     Sentry.addBreadcrumb(Breadcrumb(message: 'User initiated disconnect', category: 'ble'));
-    emit(const BandDisconnectedState());
+    _isSyncing = false;
+    _syncRemaining = 0;
+    emit(const BandDisconnectedState(isSyncing: false, syncRemaining: 0));
   }
 
   // ── Cleanup ───────────────────────────────────────────────────────────────
@@ -273,6 +367,7 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
   @override
   Future<void> close() async {
     await _bgSub?.cancel();
+    await _syncSub?.cancel();
     await _scanSub?.cancel();
     return super.close();
   }

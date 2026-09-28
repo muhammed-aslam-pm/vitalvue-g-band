@@ -89,6 +89,12 @@ class BandState {
   final EcgResultData? lastEcgResult;
   final EcgDiagnosisData? lastEcgDiagnosis;
 
+  // 24/7 Consistency & Cycle Tracking fields
+  final double consistencyScore;
+  final int cycleCount;
+  final String activePhase;
+  final String? vitalGapWarning;
+
   const BandState({
     this.connectionStatus = BleConnectionStatus.disconnected,
     this.hr = 0,
@@ -119,6 +125,10 @@ class BandState {
     this.ecgAdcPoints = const [],
     this.lastEcgResult,
     this.lastEcgDiagnosis,
+    this.consistencyScore = 100.0,
+    this.cycleCount = 0,
+    this.activePhase = '',
+    this.vitalGapWarning,
   });
 
   BandState copyWith({
@@ -153,6 +163,11 @@ class BandState {
     EcgResultData? lastEcgResult,
     EcgDiagnosisData? lastEcgDiagnosis,
     bool clearEcgAdc = false,
+    double? consistencyScore,
+    int? cycleCount,
+    String? activePhase,
+    String? vitalGapWarning,
+    bool clearWarning = false,
   }) {
     return BandState(
       connectionStatus: connectionStatus ?? this.connectionStatus,
@@ -184,6 +199,10 @@ class BandState {
       ecgAdcPoints: clearEcgAdc ? const [] : (ecgAdcPoints ?? this.ecgAdcPoints),
       lastEcgResult: lastEcgResult ?? this.lastEcgResult,
       lastEcgDiagnosis: lastEcgDiagnosis ?? this.lastEcgDiagnosis,
+      consistencyScore: consistencyScore ?? this.consistencyScore,
+      cycleCount: cycleCount ?? this.cycleCount,
+      activePhase: activePhase ?? this.activePhase,
+      vitalGapWarning: clearWarning ? null : (vitalGapWarning ?? this.vitalGapWarning),
     );
   }
 }

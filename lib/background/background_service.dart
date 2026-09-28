@@ -96,6 +96,8 @@ void onStart(ServiceInstance service) async {
     (options) {
       options.dsn = const String.fromEnvironment('SENTRY_DSN', defaultValue: defaultDsn);
       options.tracesSampleRate = 1.0;
+      options.enableFramesTracking = false;
+      options.enableAutoSessionTracking = false;
     },
   );
   
@@ -502,6 +504,10 @@ void onStart(ServiceInstance service) async {
 
   service.on('stopService').listen((event) async {
     isManualDisconnect = true;
+    service.invoke('sync_status', {
+      'isSyncing': false,
+      'pending': 0,
+    });
     patientBandRemovalTimer?.cancel();
     await session?.disconnect();
     service.stopSelf();
@@ -509,7 +515,55 @@ void onStart(ServiceInstance service) async {
 
   service.on('disconnectDevice').listen((event) async {
     isManualDisconnect = true;
+    Sentry.addBreadcrumb(Breadcrumb(
+      message: 'Manual disconnect requested from UI',
+      category: 'ble.connection',
+      level: SentryLevel.info,
+    ));
+    service.invoke('sync_status', {
+      'isSyncing': false,
+      'pending': 0,
+    });
     patientBandRemovalTimer?.cancel();
+
+    // Send single lightweight disconnect ping so backend knows band is offline
+    try {
+      final profile = await BackgroundPreferences.getProfile();
+      final device = await BackgroundPreferences.getDevice();
+      if (profile != null && device != null) {
+        final store = AuthTokenStore();
+        final repo = AuthRepository(
+            baseUrl: 'https://vitalvue-api.genesysailabs.com', store: store);
+        final interceptor =
+            AuthInterceptor(store: store, repository: repo, onLogout: () {});
+        final api = BandVitalsApi(
+          baseUrl: 'https://vitalvue-api.genesysailabs.com',
+          authInterceptor: interceptor,
+        );
+        final currState = session?.currentState ?? const BandState();
+        await api.ingest(
+          patientId: profile.id,
+          deviceId: device['id'] ?? 'gband-dev-01',
+          hr: currState.hr,
+          spo2: currState.spo2,
+          respirationRate: currState.respiratoryRate,
+          tempC: currState.tempC,
+          tempSkin: currState.tempSkin,
+          bpSys: currState.systolic ?? 0,
+          bpDia: currState.diastolic ?? 0,
+          hrv: currState.hrv ?? 0,
+          stress: (currState.stress ?? 0).toString(),
+          steps: currState.steps,
+          calories: currState.calories,
+          distanceKm: currState.distanceKm,
+          battery: currState.battery,
+          phoneBattery: -1,
+          isConnected: false,
+          isRemoved: currState.isRemoved,
+        );
+      }
+    } catch (_) {}
+
     await session?.disconnect();
   });
 
@@ -526,11 +580,68 @@ void onStart(ServiceInstance service) async {
     final remoteIdStr = event['remote_id'] as String;
     final deviceId = event['device_id'] as String;
 
+    Sentry.configureScope((scope) {
+      scope.setTag('device_id', deviceId);
+      scope.setTag('remote_id', remoteIdStr);
+    });
+    Sentry.addBreadcrumb(Breadcrumb(
+      message: 'connectDevice requested for $deviceId ($remoteIdStr)',
+      category: 'ble.connection',
+      data: {'device_id': deviceId, 'remote_id': remoteIdStr},
+      level: SentryLevel.info,
+    ));
+
     await BackgroundPreferences.saveDevice(deviceId, remoteIdStr, deviceId);
     await session?.disconnect();
 
     final profile = await BackgroundPreferences.getProfile();
     if (profile == null) return;
+
+    Sentry.configureScope((scope) {
+      scope.setUser(SentryUser(id: profile.id.toString(), username: profile.fullName));
+      scope.setTag('patient_id', profile.id.toString());
+      scope.setTag('role', 'patient');
+    });
+
+    // Register device ID on the patient's record in the backend
+    try {
+      final store = AuthTokenStore();
+      final repo = AuthRepository(
+          baseUrl: 'https://vitalvue-api.genesysailabs.com', store: store);
+      final interceptor =
+          AuthInterceptor(store: store, repository: repo, onLogout: () {});
+      final api = BandVitalsApi(
+        baseUrl: 'https://vitalvue-api.genesysailabs.com',
+        authInterceptor: interceptor,
+      );
+      api.changeDevice(deviceId).then((success) {
+        if (success) {
+          debugPrint('[Background] Successfully registered device $deviceId to patient');
+          Sentry.addBreadcrumb(Breadcrumb(
+            message: 'Device $deviceId successfully registered to patient in backend',
+            category: 'cloud.device',
+            level: SentryLevel.info,
+            data: {'device_id': deviceId, 'patient_id': profile.id},
+          ));
+        } else {
+          Sentry.addBreadcrumb(Breadcrumb(
+            message: 'Device registration returned non-success for $deviceId',
+            category: 'cloud.device',
+            level: SentryLevel.warning,
+            data: {'device_id': deviceId, 'patient_id': profile.id},
+          ));
+        }
+      }).catchError((e, stackTrace) {
+        debugPrint('[Background] Error calling changeDevice: $e');
+        Sentry.captureException(e, stackTrace: stackTrace, withScope: (scope) {
+          scope.setTag('action', 'change_device');
+          scope.setTag('device_id', deviceId);
+        });
+      });
+    } catch (_) {}
+
+    bool isSyncing = false;
+    int consecutiveIngestFailures = 0;
 
     Future<void> syncPendingVitals({
       required BandVitalsApi api,
@@ -540,22 +651,72 @@ void onStart(ServiceInstance service) async {
       required int battery,
       required bool isConnected,
       required bool isRemoved,
+      bool isHistorySync = false,
     }) async {
+      if (isManualDisconnect) {
+        debugPrint('[Background] Manual disconnect active, skipping bulk sync.');
+        return;
+      }
+      if (isSyncing) {
+        debugPrint('[Background] syncPendingVitals already in progress, skipping overlapping run.');
+        return;
+      }
+      isSyncing = true;
+      bool broadcastedSync = false;
       try {
+        final initialPending = await db.getUningestedCount();
+        if (initialPending == 0) return;
+
+        Sentry.addBreadcrumb(Breadcrumb(
+          message: 'Starting bulk sync: $initialPending pending records (historySync=$isHistorySync)',
+          category: 'sync.bulk',
+          data: {
+            'pending_count': initialPending,
+            'is_history_sync': isHistorySync,
+            'device_id': deviceId,
+            'patient_id': patientId,
+          },
+          level: SentryLevel.info,
+        ));
+
+        if ((isHistorySync || initialPending > 1) && !isManualDisconnect) {
+          broadcastedSync = true;
+          service.invoke('sync_status', {
+            'isSyncing': true,
+            'pending': initialPending,
+          });
+        }
+
+        int totalBatches = 0;
+        int totalIngested = 0;
+
         while (true) {
-          final uningested = await db.getUningestedVitals(limit: 200);
+          if (isManualDisconnect) {
+            debugPrint('[Background] Manual disconnect active, aborting bulk sync passes.');
+            Sentry.addBreadcrumb(Breadcrumb(
+              message: 'Bulk sync aborted early due to manual disconnect',
+              category: 'sync.bulk',
+              level: SentryLevel.info,
+            ));
+            break;
+          }
+
+          final uningested = await db.getUningestedVitals(limit: 100);
           if (uningested.isEmpty) break;
 
           debugPrint('[Background] Found ${uningested.length} uningested vital records to sync');
 
-          if (uningested.length == 1) {
-            // Single vital record: use single ingest endpoint
-            final row = uningested.first;
+          final ids = <int>[];
+          final payloads = <Map<String, dynamic>>[];
+
+          for (final row in uningested) {
             final id = row['_id'] as int?;
+            if (id != null) ids.add(id);
+
             final ts = row['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
             final recordedAt = DateTime.fromMillisecondsSinceEpoch(ts, isUtc: true);
 
-            final success = await api.ingest(
+            payloads.add(BandVitalsApi.buildVitalPayload(
               patientId: row['patient_id'] as int? ?? patientId,
               deviceId: (row['device_id'] as String?)?.isNotEmpty == true
                   ? row['device_id'] as String
@@ -577,65 +738,93 @@ void onStart(ServiceInstance service) async {
               isConnected: isConnected,
               isRemoved: (row['isRemoved'] == 1) || isRemoved,
               recordedAt: recordedAt,
-            );
+            ));
+          }
 
-            if (success && id != null) {
-              await db.markAsIngested(id);
+          int syncedCount = 0;
+          final success = await api.bulkIngest(
+            payloads,
+            batchSize: 25,
+            onBatchSuccess: (startIndex, endIndex) async {
+              final batchIds = ids.sublist(startIndex, endIndex);
+              await db.markMultipleAsIngested(batchIds);
+              syncedCount += batchIds.length;
+              totalIngested += batchIds.length;
+              totalBatches++;
+              if (broadcastedSync && !isManualDisconnect) {
+                final remaining = await db.getUningestedCount();
+                service.invoke('sync_status', {
+                  'isSyncing': true,
+                  'pending': remaining,
+                });
+              }
+              debugPrint('[Background] ✓ Immediately marked ${batchIds.length} vitals as ingested (progress: $syncedCount/${ids.length})');
+            },
+          );
+
+          if (success) {
+            consecutiveIngestFailures = 0;
+            debugPrint('[Background] ✓ Synced & marked $syncedCount vitals as ingested');
+          } else {
+            consecutiveIngestFailures++;
+            debugPrint('[Background] ✗ Bulk sync interrupted ($syncedCount/${payloads.length} succeeded, remainder will retry)');
+            Sentry.addBreadcrumb(Breadcrumb(
+              message: 'Bulk sync batch failed (consecutive failures: $consecutiveIngestFailures)',
+              category: 'sync.bulk',
+              level: SentryLevel.warning,
+              data: {
+                'consecutive_failures': consecutiveIngestFailures,
+                'synced_in_pass': syncedCount,
+                'attempted_pass_size': payloads.length,
+              },
+            ));
+            if (consecutiveIngestFailures == 3) {
+              Sentry.captureMessage(
+                'Cloud Ingestion Failing: 3 consecutive bulk-ingest failures for device $deviceId',
+                level: SentryLevel.warning,
+                withScope: (scope) {
+                  scope.setTag('issue_type', 'bulk_ingest_failure');
+                  scope.setTag('device_id', deviceId);
+                  scope.setTag('patient_id', patientId.toString());
+                  scope.setContexts('BulkIngest', {
+                    'attempted_pass_size': payloads.length,
+                    'synced_in_pass': syncedCount,
+                  });
+                },
+              );
             }
             break;
-          } else {
-            // Multiple records (bulk history / backlog): use bulk ingest API
-            final ids = <int>[];
-            final payloads = <Map<String, dynamic>>[];
-
-            for (final row in uningested) {
-              final id = row['_id'] as int?;
-              if (id != null) ids.add(id);
-
-              final ts = row['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
-              final recordedAt = DateTime.fromMillisecondsSinceEpoch(ts, isUtc: true);
-
-              payloads.add(BandVitalsApi.buildVitalPayload(
-                patientId: row['patient_id'] as int? ?? patientId,
-                deviceId: (row['device_id'] as String?)?.isNotEmpty == true
-                    ? row['device_id'] as String
-                    : deviceId,
-                hr: (row['hr'] as int?) ?? 0,
-                spo2: (row['spo2'] as int?) ?? 0,
-                respirationRate: (row['respirationRate'] as int?) ?? 0,
-                tempC: (row['tempC'] as num?)?.toDouble() ?? 0.0,
-                tempSkin: (row['tempSkin'] as num?)?.toDouble() ?? 0.0,
-                bpSys: (row['bpSys'] as int?) ?? 0,
-                bpDia: (row['bpDia'] as int?) ?? 0,
-                hrv: (row['hrv'] as int?) ?? 0,
-                stress: (row['stress'] ?? '0').toString(),
-                steps: (row['steps'] as int?) ?? 0,
-                calories: (row['calories'] as num?)?.toDouble() ?? 0.0,
-                distanceKm: (row['distanceKm'] as num?)?.toDouble() ?? 0.0,
-                battery: (row['battery'] as int?) ?? battery,
-                phoneBattery: -1,
-                isConnected: isConnected,
-                isRemoved: (row['isRemoved'] == 1) || isRemoved,
-                recordedAt: recordedAt,
-              ));
-            }
-
-            final success = await api.bulkIngest(payloads);
-            if (success) {
-              await db.markMultipleAsIngested(ids);
-              debugPrint('[Background] ✓ Successfully bulk-ingested ${ids.length} records');
-              if (uningested.length < 200) break;
-            } else {
-              debugPrint('[Background] ✗ Bulk ingest failed, keeping records uningested for next retry');
-              break;
-            }
           }
+        }
+
+        if (totalIngested > 0) {
+          Sentry.addBreadcrumb(Breadcrumb(
+            message: 'Bulk sync completed: successfully ingested $totalIngested vitals in $totalBatches batches',
+            category: 'sync.bulk',
+            level: SentryLevel.info,
+            data: {
+              'total_ingested': totalIngested,
+              'total_batches': totalBatches,
+              'device_id': deviceId,
+            },
+          ));
         }
 
         await db.deleteOldVitals();
       } catch (e, stackTrace) {
         debugPrint('[Background] Error during syncPendingVitals: $e');
-        Sentry.captureException(e, stackTrace: stackTrace);
+        Sentry.captureException(e, stackTrace: stackTrace, withScope: (scope) {
+          scope.setTag('task', 'sync_pending_vitals');
+          scope.setTag('device_id', deviceId);
+        });
+      } finally {
+        isSyncing = false;
+        if (broadcastedSync || isManualDisconnect) {
+          service.invoke('sync_status', {
+            'isSyncing': false,
+            'pending': 0,
+          });
+        }
       }
     }
 
@@ -659,6 +848,47 @@ void onStart(ServiceInstance service) async {
           baseUrl: 'https://vitalvue-api.genesysailabs.com',
           authInterceptor: interceptor,
         );
+
+        // On manual disconnect or disconnected state, only send a lightweight single disconnect ping.
+        // Do NOT insert uningested records into SQLite and do NOT drain historical backlog.
+        if (isManualDisconnect || state.connectionStatus == BleConnectionStatus.disconnected) {
+          debugPrint('[Background] Band disconnected (manual=$isManualDisconnect). Sending single disconnect status to cloud.');
+          try {
+            final ok = await api.ingest(
+              patientId: profile.id,
+              deviceId: deviceId,
+              hr: state.hr,
+              spo2: state.spo2,
+              respirationRate: state.respiratoryRate,
+              tempC: state.tempC,
+              tempSkin: state.tempSkin,
+              bpSys: state.systolic ?? 0,
+              bpDia: state.diastolic ?? 0,
+              hrv: state.hrv ?? 0,
+              stress: (state.stress ?? 0).toString(),
+              steps: state.steps,
+              calories: state.calories,
+              distanceKm: state.distanceKm,
+              battery: state.battery,
+              phoneBattery: -1,
+              isConnected: false,
+              isRemoved: state.isRemoved,
+            );
+            Sentry.addBreadcrumb(Breadcrumb(
+              message: 'Disconnect ingest sent: success=$ok',
+              category: 'cloud.ingest',
+              data: {'is_manual': isManualDisconnect, 'success': ok},
+              level: ok ? SentryLevel.info : SentryLevel.warning,
+            ));
+          } catch (e, stackTrace) {
+            debugPrint('[Background] Failed to send disconnect ingest: $e');
+            Sentry.captureException(e, stackTrace: stackTrace, withScope: (scope) {
+              scope.setTag('action', 'disconnect_ingest');
+              scope.setTag('device_id', deviceId);
+            });
+          }
+          return;
+        }
 
         // Guard: Don't ingest/save completely empty vitals during warm-up or connection transition
         final sys = state.systolic ?? 0;
@@ -708,7 +938,10 @@ void onStart(ServiceInstance service) async {
       },
       onHistoryRecords: (records) async {
         final db = VitalsDatabase.instance;
-        debugPrint('[Background] Persisting ${records.length} historical records from band to SQLite...');
+        debugPrint('[Background] Processing ${records.length} historical records from band...');
+        int deduplicatedCount = 0;
+        int queuedCount = 0;
+
         for (final rec in records) {
           final hr = rec['hr'] as int? ?? 0;
           final sys = rec['bpSys'] as int? ?? 0;
@@ -725,6 +958,19 @@ void onStart(ServiceInstance service) async {
 
           // Guard against empty readings
           if (hr == 0 && sys == 0 && tempC == 0.0 && steps == 0) continue;
+
+          // Check if this time window was already ingested live during active connection
+          final alreadyIngested = await db.hasIngestedVitalNear(
+            deviceId: deviceId,
+            timestamp: ts,
+            windowMs: 150000, // ±2.5 min window
+          );
+
+          if (alreadyIngested) {
+            deduplicatedCount++;
+          } else {
+            queuedCount++;
+          }
 
           await db.upsertVital({
             'timestamp': ts,
@@ -744,11 +990,29 @@ void onStart(ServiceInstance service) async {
             'distanceKm': distanceKm,
             'battery': -1,
             'isRemoved': false,
-            'isIngested': 0,
+            'isIngested': alreadyIngested ? 1 : 0,
           });
         }
+
+        Sentry.addBreadcrumb(Breadcrumb(
+          message: 'History records processed: $queuedCount queued, $deduplicatedCount deduplicated',
+          category: 'sync.history',
+          data: {
+            'queued_count': queuedCount,
+            'deduplicated_count': deduplicatedCount,
+            'total_records': records.length,
+            'device_id': deviceId,
+          },
+          level: SentryLevel.info,
+        ));
+
+        debugPrint('[Background] 📦 History sync: $queuedCount records queued for bulk ingest, $deduplicatedCount already covered by live ingest');
       },
       onHistoryComplete: () async {
+        if (isManualDisconnect) {
+          debugPrint('[Background] Manual disconnect active, skipping onHistoryComplete bulk sync.');
+          return;
+        }
         debugPrint('[Background] 🏁 Flushing on-band historical vitals via bulk-ingest...');
         final store = AuthTokenStore();
         final repo = AuthRepository(
@@ -768,6 +1032,7 @@ void onStart(ServiceInstance service) async {
           battery: currentState.battery,
           isConnected: currentState.connectionStatus == BleConnectionStatus.connected,
           isRemoved: currentState.isRemoved,
+          isHistorySync: true,
         );
       },
     );
@@ -800,6 +1065,12 @@ void onStart(ServiceInstance service) async {
         'distanceKm': state.distanceKm,
         'battery': state.battery,
         'isRemoved': state.isRemoved,
+
+        // 24/7 Consistency fields
+        'consistencyScore': state.consistencyScore,
+        'cycleCount': state.cycleCount,
+        'activePhase': state.activePhase,
+        'vitalGapWarning': state.vitalGapWarning,
 
         // ECG fields
         'isEcgMeasuring': state.isEcgMeasuring,
@@ -954,11 +1225,12 @@ void onStart(ServiceInstance service) async {
 
       if (service is AndroidServiceInstance) {
         if (isConnected) {
+          final cycleInfo = state.cycleCount > 0 ? ' (Cycle #${state.cycleCount})' : '';
           flutterLocalNotificationsPlugin.show(
             id: 888,
             title: 'GBand Connected',
             body:
-                'HR: ${state.hr} bpm | Body: ${state.tempC}°C | Skin: ${state.tempSkin}°C',
+                'HR: ${state.hr} | SpO2: ${state.spo2}% | 24/7: ${state.consistencyScore.toStringAsFixed(0)}%$cycleInfo',
             notificationDetails: const NotificationDetails(
               android: AndroidNotificationDetails(
                 'gband_monitor_service',

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:veepoo_sdk/veepoo_sdk.dart';
 import '../protocol/veepoo_protocol.dart';
+import 'vital_consistency_tracker.dart';
 
 class VitalsScheduleDurations {
   const VitalsScheduleDurations({
@@ -33,7 +34,34 @@ class BandSessionService {
     this.onHistoryRecords,
     this.onHistoryComplete,
     this.scheduleDurations = const VitalsScheduleDurations(),
-  }) : _personalInfo = personalInfo;
+  }) : _personalInfo = personalInfo {
+    _consistencyTracker = VitalConsistencyTracker(
+      patientId: patientId,
+      deviceId: deviceId,
+      onMetricsChanged: (metrics) {
+        _emit(_state.copyWith(
+          consistencyScore: metrics.consistencyScore,
+          cycleCount: metrics.totalCyclesCompleted,
+          activePhase: metrics.currentPhaseName,
+          vitalGapWarning: metrics.activeWarning,
+        ));
+      },
+      onSchedulerStallDetected: (stalledPhase) async {
+        debugPrint('[BandSession] ⚡ Auto-recovering from stalled phase: $stalledPhase');
+        _schedulerTimer?.cancel();
+        _schedulerTimer = null;
+        try {
+          final phases = _getPhases();
+          if (phases.isNotEmpty) {
+            final current = phases[_cyclePhase % phases.length];
+            await current.stop();
+          }
+        } catch (_) {}
+        _cyclePhase++;
+        _runNextPhase();
+      },
+    );
+  }
 
   final int patientId;
   final String deviceId;
@@ -45,6 +73,9 @@ class BandSessionService {
 
   final VeepooSdk _sdk = VeepooSdk();
 
+  late final VitalConsistencyTracker _consistencyTracker;
+  VitalConsistencyTracker get consistencyTracker => _consistencyTracker;
+
   BandState _state = const BandState();
   final _controller = StreamController<BandState>.broadcast();
   Stream<BandState> get stateStream => _controller.stream;
@@ -53,11 +84,12 @@ class BandSessionService {
   StreamSubscription? _eventSub;
   Timer? _hrIngestTimer;   // fires every 1 min → ingest current vitals
   Timer? _otherTimer;      // fires every 5 min → restart BP / SpO2 / Temp
-  Timer? _watchdogTimer;   // fires every 2s → evaluates off-wrist status
+  Timer? _watchdogTimer;   // fires every 2s → evaluates off-wrist status & vital consistency
   Timer? _wearErrorConfirmTimer; // debounces wear errors to prevent false positives on momentary strap adjustments
   DateTime _lastValidPulseTime = DateTime.now();
   bool _currentPhaseHadValidVital = false;
   int _consecutiveFailedPhases = 0;
+  Completer<void>? _historyReadCompleter;
 
   final List<double> _recentRrIntervals = [];
 
@@ -127,6 +159,18 @@ class BandSessionService {
       debugPrint('[BandSession] ⚠️ WATCHDOG EXPIRED: No valid vitals for ${secondsSinceValidPulse}s. Flagging band as removed.');
       _confirmBandRemoved('watchdog_expired (${secondsSinceValidPulse}s no vitals)');
     }
+
+    // 24/7 Vital Consistency & Anomaly Watchdog evaluation
+    final phases = _getPhases();
+    final currentDuration = phases.isNotEmpty
+        ? phases[_cyclePhase % phases.length].duration
+        : const Duration(seconds: 35);
+
+    _consistencyTracker.evaluateConsistency(
+      isConnected: _state.connectionStatus == BleConnectionStatus.connected,
+      isRemoved: _state.isRemoved,
+      currentPhaseDuration: currentDuration,
+    );
   }
 
   Future<bool> connect(String macAddress) async {
@@ -155,6 +199,7 @@ class BandSessionService {
   void _onEvent(Map<String, dynamic> event) {
     final type = event['type'] as String?;
     if (type == null) return;
+    _consistencyTracker.recordBlePacket();
     
     switch(type) {
       case 'connectionState':
@@ -185,6 +230,7 @@ class BandSessionService {
         debugPrint('[BandSession] ❤️  heartRate=$hrVal (valid: $isValid)');
         if (isValid) {
           _onValidVitalsReceived('HR $hrVal bpm');
+          _consistencyTracker.recordVitalReading('hr', hrVal);
           _emit(_state.copyWith(hr: hrVal, isRemoved: false));
           _processHrvFromHeartRate(hrVal);
         }
@@ -195,6 +241,7 @@ class BandSessionService {
         debugPrint('[BandSession] 🩸 spo2=$spo2Val (valid: $isValid)');
         if (isValid) {
           _onValidVitalsReceived('SpO2 $spo2Val%');
+          _consistencyTracker.recordVitalReading('spo2', spo2Val);
           _emit(_state.copyWith(spo2: spo2Val, isRemoved: false));
         }
         break;
@@ -204,6 +251,7 @@ class BandSessionService {
         debugPrint('[BandSession] 🫁 respiratoryRate=$rrVal (valid: $isValid)');
         if (isValid) {
           _onValidVitalsReceived('RR $rrVal rpm');
+          _consistencyTracker.recordVitalReading('rr', rrVal);
           _emit(_state.copyWith(respiratoryRate: rrVal, isRemoved: false));
         }
         break;
@@ -215,6 +263,7 @@ class BandSessionService {
         debugPrint('[BandSession] 💉 bp=$sys/$dia (valid: $isValid)');
         if (isValid) {
           _onValidVitalsReceived('BP $sys/$dia');
+          _consistencyTracker.recordVitalReading('bp', sys);
           _emit(_state.copyWith(systolic: sys, diastolic: dia, isRemoved: false));
         }
         break;
@@ -227,6 +276,7 @@ class BandSessionService {
         double? validSkinTemp;
         if (tempVal > 30.0 && tempVal < 45.0) {
           validBodyTemp = tempVal;
+          _consistencyTracker.recordVitalReading('temp', validBodyTemp);
         }
         if (tempBaseVal > 30.0 && tempBaseVal < 45.0) {
           validSkinTemp = tempBaseVal;
@@ -254,6 +304,7 @@ class BandSessionService {
         debugPrint('[BandSession] 💓 hrv=$hrvVal');
         if (hrvVal > 0) {
           _onValidVitalsReceived('HRV $hrvVal ms');
+          _consistencyTracker.recordVitalReading('hrv', hrvVal);
           _emit(_state.copyWith(hrv: hrvVal, isRemoved: false));
         }
         break;
@@ -262,6 +313,7 @@ class BandSessionService {
         debugPrint('[BandSession] ☯️ stress=$stressVal');
         if (stressVal > 0) {
           _onValidVitalsReceived('Stress $stressVal');
+          _consistencyTracker.recordVitalReading('stress', stressVal);
           _emit(_state.copyWith(stress: stressVal, isRemoved: false));
         }
         break;
@@ -436,6 +488,9 @@ class BandSessionService {
         break;
       case 'originDataComplete':
         debugPrint('[BandSession] 🏁 Band historical data reading complete');
+        if (_historyReadCompleter != null && !_historyReadCompleter!.isCompleted) {
+          _historyReadCompleter!.complete();
+        }
         onHistoryComplete?.call();
         break;
       default:
@@ -482,7 +537,14 @@ class BandSessionService {
       await Future<void>.delayed(const Duration(milliseconds: 600));
 
       debugPrint('[BandSession] Step 6: Reading 5-minute historical origin vitals from band (all days)...');
+      _historyReadCompleter = Completer<void>();
       await _sdk.readOriginData(day: -1);
+      // Wait for historical dump to complete before starting live rotation so BLE bus is quiet
+      try {
+        await _historyReadCompleter?.future.timeout(const Duration(seconds: 15));
+      } catch (_) {
+        debugPrint('[BandSession] ⏱ Historical read wait finished/timed out; starting live scheduler');
+      }
     } catch (e) {
       debugPrint('[BandSession] Error reading init status/vitals: $e');
     }
@@ -499,32 +561,20 @@ class BandSessionService {
     _hrIngestTimer?.cancel();
     _hrIngestTimer = Timer.periodic(scheduleDurations.ingestInterval, (_) async {
       if (_state.connectionStatus == BleConnectionStatus.connected) {
-        debugPrint('[BandSession] ⏱ Routine ingest (${scheduleDurations.ingestInterval.inSeconds}s): hr=${_state.hr} spo2=${_state.spo2} rr=${_state.respiratoryRate} temp=${_state.tempC} bp=${_state.systolic}/${_state.diastolic} hrv=${_state.hrv} stress=${_state.stress} steps=${_state.steps} battery=${_state.battery}% isRemoved=${_state.isRemoved} sleep=${_state.totalSleepMinutes}m');
-        onIngest(_state);
+        try {
+          debugPrint('[BandSession] ⏱ Routine ingest (${scheduleDurations.ingestInterval.inSeconds}s): hr=${_state.hr} spo2=${_state.spo2} rr=${_state.respiratoryRate} temp=${_state.tempC} bp=${_state.systolic}/${_state.diastolic} hrv=${_state.hrv} stress=${_state.stress} steps=${_state.steps} battery=${_state.battery}% isRemoved=${_state.isRemoved} sleep=${_state.totalSleepMinutes}m');
+          await onIngest(_state);
+        } catch (e) {
+          debugPrint('[BandSession] ⚠️ Error during routine ingest: $e');
+        }
       }
     });
 
     debugPrint('[BandSession] ── INIT PHASE COMPLETE ──');
   }
 
-  void _startScheduler() async {
-    _schedulerTimer?.cancel();
-    _cyclePhase = 0;
-    // Allow BLE bus to settle for 500ms before starting Phase 0 (Heart Rate & HRV)
-    await Future.delayed(const Duration(milliseconds: 500));
-    _runNextPhase();
-  }
-
-  void _runNextPhase() async {
-    if (_state.connectionStatus != BleConnectionStatus.connected) return;
-
-    // Define sequential phases to prevent PPG green/red LED clashes.
-    // 0: HR & Dynamic HRV (35s) - Measured first immediately upon connection!
-    // 1: SpO2 & Respiration Rate (20s)
-    // 2: Temperature (20s)
-    // 3: Blood Pressure (55s)
-    // 4: Stress (35s)
-    final phases = [
+  List<_MeasurementPhase> _getPhases() {
+    return [
       _MeasurementPhase(
         name: 'Heart Rate & HRV',
         duration: scheduleDurations.hrHrvDuration,
@@ -606,10 +656,24 @@ class BandSessionService {
         },
       ),
     ];
+  }
 
+  void _startScheduler() async {
+    _schedulerTimer?.cancel();
+    _cyclePhase = 0;
+    // Allow BLE bus to settle for 500ms before starting Phase 0 (Heart Rate & HRV)
+    await Future.delayed(const Duration(milliseconds: 500));
+    _runNextPhase();
+  }
+
+  void _runNextPhase() async {
+    if (_state.connectionStatus != BleConnectionStatus.connected) return;
+
+    final phases = _getPhases();
     final current = phases[_cyclePhase % phases.length];
     debugPrint('[BandSession] 🔄 Scheduler Phase: ${current.name} (duration: ${current.duration.inSeconds}s)');
     _currentPhaseHadValidVital = false;
+    _consistencyTracker.recordPhaseStart(current.name, current.duration);
     
     try {
       await current.start();
@@ -617,6 +681,7 @@ class BandSessionService {
       debugPrint('[BandSession] Error starting phase ${current.name}: $e');
     }
 
+    _schedulerTimer?.cancel();
     _schedulerTimer = Timer(current.duration, () async {
       try {
         await current.stop();
@@ -639,14 +704,28 @@ class BandSessionService {
         }
       }
 
+      // Record consistency metrics for completed phase
+      _consistencyTracker.recordPhaseEnd(current.name, hadValidVital: _currentPhaseHadValidVital);
+
       // Trigger an immediate ingest after each phase completes to persist new values right away
       if (_state.connectionStatus == BleConnectionStatus.connected) {
-        debugPrint('[BandSession] ⏱ Immediate ingest post-${current.name} completion');
-        onIngest(_state);
+        try {
+          debugPrint('[BandSession] ⏱ Immediate ingest post-${current.name} completion');
+          await onIngest(_state);
+        } catch (e) {
+          debugPrint('[BandSession] ⚠️ Ingest error post-phase: $e');
+        }
       }
 
       _cyclePhase++;
       if (_cyclePhase % phases.length == 0) {
+        _consistencyTracker.recordCycleCompleted(
+          hr: _state.hr,
+          spo2: _state.spo2,
+          tempC: _state.tempC,
+          bpSys: _state.systolic,
+          bpDia: _state.diastolic,
+        );
         // Between full measurement cycles: refresh battery and steps safely without heavy sleep dump
         try {
           await _sdk.readBattery();
@@ -677,6 +756,10 @@ class BandSessionService {
     _hrIngestTimer?.cancel();
     _otherTimer?.cancel();
     _schedulerTimer?.cancel();
+    if (_historyReadCompleter != null && !_historyReadCompleter!.isCompleted) {
+      _historyReadCompleter!.complete();
+    }
+    _historyReadCompleter = null;
     _emit(_state.copyWith(connectionStatus: BleConnectionStatus.disconnected));
   }
 

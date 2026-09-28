@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -6,6 +8,11 @@ class VitalsDatabase {
   static Database? _database;
 
   VitalsDatabase._init();
+
+  @visibleForTesting
+  static void setDatabaseForTesting(Database? db) {
+    _database = db;
+  }
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -25,6 +32,11 @@ class VitalsDatabase {
         // Always recreate the table on any version bump to clear stale data.
         await db.execute('DROP TABLE IF EXISTS vitals');
         await _createDB(db, newVersion);
+      },
+      onOpen: (db) async {
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_vitals_dedup ON vitals(device_id, isIngested, timestamp)',
+        );
       },
     );
   }
@@ -60,6 +72,9 @@ CREATE TABLE vitals (
   UNIQUE(timestamp, device_id)
   )
 ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_vitals_dedup ON vitals(device_id, isIngested, timestamp)',
+    );
   }
 
   Future<int> upsertVital(Map<String, dynamic> vital) async {
@@ -120,6 +135,15 @@ CREATE TABLE vitals (
     );
   }
 
+  Future<int> getUningestedCount() async {
+    final db = await instance.database;
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM vitals WHERE isIngested = 0');
+    if (result.isNotEmpty) {
+      return (result.first['count'] as int?) ?? 0;
+    }
+    return 0;
+  }
+
   Future<List<Map<String, dynamic>>> getUningestedVitals({int? limit}) async {
     final db = await instance.database;
     return await db.query(
@@ -129,6 +153,33 @@ CREATE TABLE vitals (
       orderBy: 'timestamp ASC',
       limit: limit,
     );
+  }
+
+  /// Checks whether an already-ingested vital record exists for [deviceId]
+  /// within [windowMs] of [timestamp].
+  ///
+  /// Defaults to windowMs = 150,000 ms (±2.5 minutes), covering a full 5-minute bucket.
+  Future<bool> hasIngestedVitalNear({
+    required String deviceId,
+    required int timestamp,
+    int windowMs = 150000,
+  }) async {
+    try {
+      final db = await instance.database;
+      final start = timestamp - windowMs;
+      final end = timestamp + windowMs;
+      final results = await db.query(
+        'vitals',
+        columns: ['_id'],
+        where: 'device_id = ? AND timestamp >= ? AND timestamp <= ? AND isIngested = 1',
+        whereArgs: [deviceId, start, end],
+        limit: 1,
+      );
+      return results.isNotEmpty;
+    } catch (e, stackTrace) {
+      Sentry.captureException(e, stackTrace: stackTrace);
+      return false;
+    }
   }
 
   Future<List<Map<String, dynamic>>> getVitalsForLast24Hours() async {
@@ -154,17 +205,24 @@ CREATE TABLE vitals (
 
   Future<void> markMultipleAsIngested(List<int> ids) async {
     if (ids.isEmpty) return;
-    final db = await instance.database;
-    final batch = db.batch();
-    for (final id in ids) {
-      batch.update(
-        'vitals',
-        {'isIngested': 1},
-        where: '_id = ?',
-        whereArgs: [id],
-      );
+    try {
+      final db = await instance.database;
+      final batch = db.batch();
+      for (final id in ids) {
+        batch.update(
+          'vitals',
+          {'isIngested': 1},
+          where: '_id = ?',
+          whereArgs: [id],
+        );
+      }
+      await batch.commit(noResult: true);
+    } catch (e, stackTrace) {
+      Sentry.captureException(e, stackTrace: stackTrace, withScope: (scope) {
+        scope.setContexts('Database', {'action': 'markMultipleAsIngested', 'ids_count': ids.length});
+      });
+      rethrow;
     }
-    await batch.commit(noResult: true);
   }
 
   Future<void> deleteOldVitals() async {
