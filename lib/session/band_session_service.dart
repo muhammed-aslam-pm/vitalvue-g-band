@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:veepoo_sdk/veepoo_sdk.dart';
+import '../config/vitalvue_config.dart';
+import '../engine/rr_estimation_engine.dart';
+import '../engine/personal_baseline_engine.dart';
 import '../protocol/veepoo_protocol.dart';
 import 'vital_consistency_tracker.dart';
 
@@ -15,6 +18,18 @@ class VitalsScheduleDurations {
     this.hrHrvDuration = const Duration(seconds: 35),
     this.ingestInterval = const Duration(seconds: 60),
   });
+
+  factory VitalsScheduleDurations.fromProfile(VitalVueProfileConfig config) {
+    return VitalsScheduleDurations(
+      spo2Duration: config.spo2DetectionDuration,
+      breathDuration: config.breathDetectionDuration,
+      tempDuration: config.tempDetectionDuration,
+      bpDuration: config.bpDetectionDuration,
+      stressDuration: config.stressDetectionDuration,
+      hrHrvDuration: config.hrDetectionDuration,
+      ingestInterval: config.ingestInterval,
+    );
+  }
 
   final Duration spo2Duration;
   final Duration breathDuration;
@@ -33,8 +48,20 @@ class BandSessionService {
     required this.onIngest,
     this.onHistoryRecords,
     this.onHistoryComplete,
-    this.scheduleDurations = const VitalsScheduleDurations(),
-  }) : _personalInfo = personalInfo {
+    VitalVueProfileConfig? profileConfig,
+    VitalsScheduleDurations? scheduleDurations,
+  })  : profileConfig = profileConfig ?? VitalVueProfileConfig.current,
+        scheduleDurations = scheduleDurations ??
+            VitalsScheduleDurations.fromProfile(profileConfig ?? VitalVueProfileConfig.current),
+        _personalInfo = personalInfo {
+    _rrEngine = RrEstimationEngine(
+      publicationInterval: (profileConfig ?? VitalVueProfileConfig.current).rrInterval,
+      isHospitalMode: (profileConfig ?? VitalVueProfileConfig.current).mode.isHospital,
+    );
+    _baselineEngine = PersonalBaselineEngine(
+      profileConfig: profileConfig ?? VitalVueProfileConfig.current,
+    );
+
     _consistencyTracker = VitalConsistencyTracker(
       patientId: patientId,
       deviceId: deviceId,
@@ -69,7 +96,21 @@ class BandSessionService {
   final Future<void> Function(BandState state) onIngest;
   final Future<void> Function(List<Map<String, dynamic>> records)? onHistoryRecords;
   final Future<void> Function()? onHistoryComplete;
+  final VitalVueProfileConfig profileConfig;
   final VitalsScheduleDurations scheduleDurations;
+
+  late final RrEstimationEngine _rrEngine;
+  late final PersonalBaselineEngine _baselineEngine;
+  Timer? _baselineTimer;
+
+  // Measurement timestamps for freshness evaluation
+  DateTime _lastHrTime = DateTime.now();
+  DateTime _lastRrTime = DateTime.now();
+  DateTime _lastSpo2Time = DateTime.now();
+  DateTime _lastBpTime = DateTime.now();
+  DateTime _lastTempTime = DateTime.now();
+  DateTime _lastHrvTime = DateTime.now();
+  DateTime _lastStressTime = DateTime.now();
 
   final VeepooSdk _sdk = VeepooSdk();
 
@@ -82,7 +123,7 @@ class BandSessionService {
   BandState get currentState => _state;
 
   StreamSubscription? _eventSub;
-  Timer? _hrIngestTimer;   // fires every 1 min → ingest current vitals
+  Timer? _hrIngestTimer;   // fires every ingestInterval → ingest current vitals
   Timer? _otherTimer;      // fires every 5 min → restart BP / SpO2 / Temp
   Timer? _watchdogTimer;   // fires every 2s → evaluates off-wrist status & vital consistency
   Timer? _wearErrorConfirmTimer; // debounces wear errors to prevent false positives on momentary strap adjustments
@@ -135,16 +176,44 @@ class BandSessionService {
         sumSqDiff += diff * diff;
       }
       final rmssd = math.sqrt(sumSqDiff / (_recentRrIntervals.length - 1)).round();
-      if (_state.respiratoryRate <= 0 && !_state.isRemoved) {
-        final estimatedRr = ((hr / 4.5).round()).clamp(12, 20);
-        _emit(_state.copyWith(
-          hrv: (rmssd > 10 && rmssd < 200) ? rmssd : _state.hrv,
-          respiratoryRate: estimatedRr,
-        ));
-      } else if (rmssd > 10 && rmssd < 200) {
+      if (rmssd > 10 && rmssd < 200) {
+        _lastHrvTime = DateTime.now();
+        _rrEngine.addHrv(rmssd);
         _emit(_state.copyWith(hrv: rmssd));
       }
     }
+  }
+
+  void _recalculatePersonalBaseline() {
+    if (_state.connectionStatus != BleConnectionStatus.connected) return;
+    final report = _baselineEngine.evaluate(
+      hr: _state.hr,
+      hrTimestamp: _lastHrTime,
+      rr: _state.respiratoryRate,
+      rrTimestamp: _lastRrTime,
+      spo2: _state.spo2,
+      spo2Timestamp: _lastSpo2Time,
+      systolicBp: _state.systolic ?? 0,
+      diastolicBp: _state.diastolic ?? 0,
+      bpTimestamp: _lastBpTime,
+      tempC: _state.tempC,
+      tempTimestamp: _lastTempTime,
+      hrv: _state.hrv ?? 0,
+      hrvTimestamp: _lastHrvTime,
+      stress: _state.stress ?? 0,
+      stressTimestamp: _lastStressTime,
+      steps: _state.steps,
+      totalSleepMinutes: _state.totalSleepMinutes,
+    );
+
+    _emit(_state.copyWith(
+      news2Score: report.news2Score,
+      personalBaselineScore: report.personalBaselineScore,
+      trendStatus: report.trend.name,
+      parameterFreshness: report.freshnessMap.map((k, v) => MapEntry(k, v.name)),
+      clinicalSummary: report.clinicalSummary,
+    ));
+    debugPrint('[BandSession] 📊 Baseline Score: ${report.personalBaselineScore}/100, NEWS2: ${report.news2Score}, Trend: ${report.trend.displayName}');
   }
 
   void _tickWatchdog() {
@@ -231,8 +300,24 @@ class BandSessionService {
         if (isValid) {
           _onValidVitalsReceived('HR $hrVal bpm');
           _consistencyTracker.recordVitalReading('hr', hrVal);
-          _emit(_state.copyWith(hr: hrVal, isRemoved: false));
+          _lastHrTime = DateTime.now();
+          _rrEngine.addHeartRate(hrVal);
           _processHrvFromHeartRate(hrVal);
+
+          final publishedRr = _rrEngine.pollValidatedRr();
+          if (publishedRr != null) {
+            _lastRrTime = publishedRr.timestamp;
+            _emit(_state.copyWith(
+              hr: hrVal,
+              respiratoryRate: publishedRr.respiratoryRate,
+              isRrValidated: publishedRr.isValidated,
+              rrConfidence: publishedRr.confidence,
+              rrSource: publishedRr.source,
+              isRemoved: false,
+            ));
+          } else {
+            _emit(_state.copyWith(hr: hrVal, isRemoved: false));
+          }
         }
         break;
       case 'spo2':
@@ -242,6 +327,8 @@ class BandSessionService {
         if (isValid) {
           _onValidVitalsReceived('SpO2 $spo2Val%');
           _consistencyTracker.recordVitalReading('spo2', spo2Val);
+          _lastSpo2Time = DateTime.now();
+          _rrEngine.addSpo2(spo2Val);
           _emit(_state.copyWith(spo2: spo2Val, isRemoved: false));
         }
         break;
@@ -252,7 +339,16 @@ class BandSessionService {
         if (isValid) {
           _onValidVitalsReceived('RR $rrVal rpm');
           _consistencyTracker.recordVitalReading('rr', rrVal);
-          _emit(_state.copyWith(respiratoryRate: rrVal, isRemoved: false));
+          _lastRrTime = DateTime.now();
+          _rrEngine.addHardwareBreathRate(rrVal);
+          final publishedRr = _rrEngine.pollValidatedRr(force: true);
+          _emit(_state.copyWith(
+            respiratoryRate: publishedRr?.respiratoryRate ?? rrVal,
+            isRrValidated: publishedRr?.isValidated ?? true,
+            rrConfidence: publishedRr?.confidence ?? 0.90,
+            rrSource: publishedRr?.source ?? 'hardware_sensor',
+            isRemoved: false,
+          ));
         }
         break;
       case 'bloodPressure':
@@ -264,6 +360,7 @@ class BandSessionService {
         if (isValid) {
           _onValidVitalsReceived('BP $sys/$dia');
           _consistencyTracker.recordVitalReading('bp', sys);
+          _lastBpTime = DateTime.now();
           _emit(_state.copyWith(systolic: sys, diastolic: dia, isRemoved: false));
         }
         break;
@@ -276,6 +373,7 @@ class BandSessionService {
         double? validSkinTemp;
         if (tempVal > 30.0 && tempVal < 45.0) {
           validBodyTemp = tempVal;
+          _lastTempTime = DateTime.now();
           _consistencyTracker.recordVitalReading('temp', validBodyTemp);
         }
         if (tempBaseVal > 30.0 && tempBaseVal < 45.0) {
@@ -293,6 +391,7 @@ class BandSessionService {
         final disVal = (event['distance'] as num?)?.toDouble() ?? 0.0;
         final kcalVal = (event['calories'] as num?)?.toDouble() ?? 0.0;
         debugPrint('[BandSession] 🏃 sportData: steps=$stepsVal dis=$disVal kcal=$kcalVal');
+        _rrEngine.addMotion(stepsVal);
         _emit(_state.copyWith(
           steps: stepsVal,
           distanceKm: disVal,
@@ -305,6 +404,8 @@ class BandSessionService {
         if (hrvVal > 0) {
           _onValidVitalsReceived('HRV $hrvVal ms');
           _consistencyTracker.recordVitalReading('hrv', hrvVal);
+          _lastHrvTime = DateTime.now();
+          _rrEngine.addHrv(hrvVal);
           _emit(_state.copyWith(hrv: hrvVal, isRemoved: false));
         }
         break;
@@ -314,6 +415,7 @@ class BandSessionService {
         if (stressVal > 0) {
           _onValidVitalsReceived('Stress $stressVal');
           _consistencyTracker.recordVitalReading('stress', stressVal);
+          _lastStressTime = DateTime.now();
           _emit(_state.copyWith(stress: stressVal, isRemoved: false));
         }
         break;
@@ -556,6 +658,13 @@ class BandSessionService {
         Timer.periodic(const Duration(seconds: 2), (_) => _tickWatchdog());
     _startScheduler();
 
+    // Start Personal Baseline evaluation timer
+    _recalculatePersonalBaseline();
+    _baselineTimer?.cancel();
+    _baselineTimer = Timer.periodic(profileConfig.personalBaselineInterval, (_) {
+      _recalculatePersonalBaseline();
+    });
+
     // ── HR ingest timer: periodic ingest ──────────────────────────────────
     // Ingests the current BandState to cloud & DB without interrupting active BLE sensors.
     _hrIngestTimer?.cancel();
@@ -574,7 +683,7 @@ class BandSessionService {
   }
 
   List<_MeasurementPhase> _getPhases() {
-    return [
+    final phases = <_MeasurementPhase>[
       _MeasurementPhase(
         name: 'Heart Rate & HRV',
         duration: scheduleDurations.hrHrvDuration,
@@ -583,6 +692,7 @@ class BandSessionService {
           await _sdk.stopDetectBP();
           await _sdk.stopDetectTemp();
           await _sdk.stopDetectPressure();
+          await _sdk.stopDetectBreath();
           await _sdk.stopDetectHeart();
           await Future.delayed(const Duration(milliseconds: 600));
           await _sdk.startDetectHeart();
@@ -599,12 +709,40 @@ class BandSessionService {
           await _sdk.stopDetectBP();
           await _sdk.stopDetectTemp();
           await _sdk.stopDetectPressure();
+          await _sdk.stopDetectBreath();
           await _sdk.stopDetectSPO2();
           await Future.delayed(const Duration(milliseconds: 600));
           await _sdk.startDetectSPO2();
         },
         stop: () async {
           await _sdk.stopDetectSPO2();
+        },
+      ),
+      _MeasurementPhase(
+        name: 'Respiration',
+        duration: scheduleDurations.breathDuration,
+        start: () async {
+          await _sdk.stopDetectHeart();
+          await _sdk.stopDetectSPO2();
+          await _sdk.stopDetectBP();
+          await _sdk.stopDetectTemp();
+          await _sdk.stopDetectPressure();
+          await _sdk.stopDetectBreath();
+          await Future.delayed(const Duration(milliseconds: 600));
+          await _sdk.startDetectBreath();
+        },
+        stop: () async {
+          await _sdk.stopDetectBreath();
+          final published = _rrEngine.pollValidatedRr(force: true);
+          if (published != null) {
+            _lastRrTime = published.timestamp;
+            _emit(_state.copyWith(
+              respiratoryRate: published.respiratoryRate,
+              isRrValidated: published.isValidated,
+              rrConfidence: published.confidence,
+              rrSource: published.source,
+            ));
+          }
         },
       ),
       _MeasurementPhase(
@@ -615,6 +753,7 @@ class BandSessionService {
           await _sdk.stopDetectSPO2();
           await _sdk.stopDetectBP();
           await _sdk.stopDetectPressure();
+          await _sdk.stopDetectBreath();
           await _sdk.stopDetectTemp();
           await Future.delayed(const Duration(milliseconds: 600));
           await _sdk.startDetectTemp();
@@ -623,7 +762,10 @@ class BandSessionService {
           await _sdk.stopDetectTemp();
         },
       ),
-      _MeasurementPhase(
+    ];
+
+    if (profileConfig.bpMode == BpMeasurementMode.nurseConfigurable) {
+      phases.add(_MeasurementPhase(
         name: 'Blood Pressure',
         duration: scheduleDurations.bpDuration,
         start: () async {
@@ -631,6 +773,7 @@ class BandSessionService {
           await _sdk.stopDetectSPO2();
           await _sdk.stopDetectTemp();
           await _sdk.stopDetectPressure();
+          await _sdk.stopDetectBreath();
           await _sdk.stopDetectBP();
           await Future.delayed(const Duration(milliseconds: 600));
           await _sdk.startDetectBP();
@@ -638,24 +781,28 @@ class BandSessionService {
         stop: () async {
           await _sdk.stopDetectBP();
         },
-      ),
-      _MeasurementPhase(
-        name: 'Stress',
-        duration: scheduleDurations.stressDuration,
-        start: () async {
-          await _sdk.stopDetectHeart();
-          await _sdk.stopDetectSPO2();
-          await _sdk.stopDetectBP();
-          await _sdk.stopDetectTemp();
-          await _sdk.stopDetectPressure();
-          await Future.delayed(const Duration(milliseconds: 600));
-          await _sdk.startDetectPressure();
-        },
-        stop: () async {
-          await _sdk.stopDetectPressure();
-        },
-      ),
-    ];
+      ));
+    }
+
+    phases.add(_MeasurementPhase(
+      name: 'Stress',
+      duration: scheduleDurations.stressDuration,
+      start: () async {
+        await _sdk.stopDetectHeart();
+        await _sdk.stopDetectSPO2();
+        await _sdk.stopDetectBP();
+        await _sdk.stopDetectTemp();
+        await _sdk.stopDetectBreath();
+        await _sdk.stopDetectPressure();
+        await Future.delayed(const Duration(milliseconds: 600));
+        await _sdk.startDetectPressure();
+      },
+      stop: () async {
+        await _sdk.stopDetectPressure();
+      },
+    ));
+
+    return phases;
   }
 
   void _startScheduler() async {
@@ -753,6 +900,8 @@ class BandSessionService {
     _watchdogTimer = null;
     _wearErrorConfirmTimer?.cancel();
     _wearErrorConfirmTimer = null;
+    _baselineTimer?.cancel();
+    _baselineTimer = null;
     _hrIngestTimer?.cancel();
     _otherTimer?.cancel();
     _schedulerTimer?.cancel();

@@ -15,6 +15,7 @@ import '../../bloc/band_monitor_event.dart';
 import '../../bloc/band_monitor_state.dart';
 import '../../protocol/veepoo_protocol.dart';
 import '../widgets/device_scan_sheet.dart';
+import '../widgets/personal_baseline_banner.dart';
 import '../widgets/vital_card.dart';
 import 'ecg_measurement_page.dart';
 import 'profile_page.dart';
@@ -135,11 +136,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
                         SliverToBoxAdapter(
                           child: _buildConnectionBanner(context, bandState),
                         ),
-                        SliverPadding(
-                          padding:
-                              const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                          sliver: _buildBody(context, bandState),
-                        ),
+                        ..._buildBodySlivers(context, bandState),
                       ],
                     );
                   },
@@ -177,7 +174,6 @@ class _BandMonitorPageState extends State<BandMonitorPage>
 
   Widget _buildAppBar(
       BuildContext context, BandMonitorState state, UserProfile? profile) {
-    final isPatient = profile?.isPatient ?? false;
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
       child: Row(
@@ -186,23 +182,46 @@ class _BandMonitorPageState extends State<BandMonitorPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'VitalVue',
-                  style: GoogleFonts.inter(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Text(
+                      'VitalVue',
+                      style: GoogleFonts.inter(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF00BFA5).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: const Color(0xFF00BFA5).withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: const Text(
+                        'Consumer Version',
+                        style: TextStyle(
+                          color: Color(0xFF00BFA5),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 Text(
-                  isPatient ? 'JStyle JCV5' : (profile?.role ?? ''),
+                  'Continuous wellness & vitals tracking',
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
                     fontSize: 12,
+                    fontWeight: FontWeight.w500,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -258,26 +277,148 @@ class _BandMonitorPageState extends State<BandMonitorPage>
     return const SizedBox.shrink();
   }
 
-  // ── Body ──────────────────────────────────────────────────────────────────
-
-  Widget _buildBody(BuildContext context, BandMonitorState state) {
+  List<Widget> _buildBodySlivers(BuildContext context, BandMonitorState state) {
     if (state is BandConnectedState) {
-      return _buildVitalsGrid(state.vitals);
+      final v = state.vitals;
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+            child: PersonalBaselineBanner(
+              state: v,
+            ),
+          ),
+        ),
+        // ── Section 1: Primary Vitals ────────────────────────────────────────
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: _buildSectionHeader(
+              context,
+              title: 'PRIMARY VITALS',
+              subtitle: 'Periodic 5–30 min monitoring',
+              badge: 'Priority High',
+              badgeColor: const Color(0xFF00BFA5),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          sliver: _buildPrimaryVitalsGrid(v),
+        ),
+        // ── Section 2: Autonomic & Contextual Parameters ─────────────────────
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            child: _buildSectionHeader(
+              context,
+              title: 'AUTONOMIC & METABOLIC',
+              subtitle: '15–60 min wellness trends',
+              badge: 'Contextual',
+              badgeColor: const Color(0xFF7C4DFF),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          sliver: _buildSecondaryVitalsGrid(v),
+        ),
+        // ── Section 3: Daily Activity & Sleep ─────────────────────────────────
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            child: _buildSectionHeader(
+              context,
+              title: 'DAILY ACTIVITY & SLEEP',
+              subtitle: 'Cumulative movement & sleep analysis',
+              badge: 'Functional',
+              badgeColor: const Color(0xFF4CAF50),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+          sliver: _buildFunctionalVitalsGrid(v),
+        ),
+      ];
     }
 
     if (state is BandScanningState || state is BandConnectingState) {
-      return SliverFillRemaining(
-        child: _buildLoadingState(state),
-      );
+      return [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          sliver: SliverFillRemaining(
+            child: _buildLoadingState(state),
+          ),
+        ),
+      ];
     }
 
-    return SliverFillRemaining(
-      child: _buildIdleState(),
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        sliver: SliverFillRemaining(
+          child: _buildIdleState(),
+        ),
+      ),
+    ];
+  }
+
+  Widget _buildSectionHeader(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required String badge,
+    required Color badgeColor,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: badgeColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
+          ),
+          child: Text(
+            badge,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: badgeColor,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
-
-  Widget _buildVitalsGrid(BandState v) {
+  Widget _buildPrimaryVitalsGrid(BandState v) {
     final bpText = (v.systolic != null && v.diastolic != null)
         ? '${v.systolic}/${v.diastolic}'
         : '--/--';
@@ -296,8 +437,8 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           unit: 'bpm',
           icon: Icons.favorite_rounded,
           accentColor: const Color(0xFFE53935),
-          subtitle: 'Live',
-          isAlert: false,
+          subtitle: '5-min interval',
+          isAlert: v.hr > 0 && (v.hr <= 40 || v.hr >= 131),
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'Heart Rate',
@@ -310,6 +451,83 @@ class _BandMonitorPageState extends State<BandMonitorPage>
             .animate()
             .fadeIn(duration: 400.ms)
             .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        VitalCard(
+          label: 'Respiration (RR)',
+          value: v.respiratoryRate > 0 ? '${v.respiratoryRate}' : '--',
+          unit: 'rpm',
+          icon: Icons.air_rounded,
+          accentColor: const Color(0xFF00ACC1),
+          subtitle: v.isRrValidated
+              ? 'Validated (${v.rrSource})'
+              : (v.respiratoryRate > 0
+                  ? 'Evaluating confidence...'
+                  : '15–30m / overnight'),
+          isAlert: v.respiratoryRate > 0 && (v.respiratoryRate <= 8 || v.respiratoryRate >= 25),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => const VitalsDetailsPage(
+              title: 'Respiratory Rate',
+              dbColumnName: 'respirationRate',
+              unit: 'rpm',
+              accentColor: Color(0xFF00ACC1),
+            ),
+          )),
+        )
+            .animate()
+            .fadeIn(delay: 60.ms, duration: 400.ms)
+            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        VitalCard(
+          label: 'SpO₂',
+          value: v.spo2 > 0 ? '${v.spo2}' : '--',
+          unit: '%',
+          icon: Icons.water_drop_rounded,
+          accentColor: const Color(0xFF00BFA5),
+          subtitle: '15–30 min / overnight',
+          isAlert: v.spo2 > 0 && v.spo2 <= 91,
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => const VitalsDetailsPage(
+              title: 'SpO₂',
+              dbColumnName: 'spo2',
+              unit: '%',
+              accentColor: Color(0xFF00BFA5),
+            ),
+          )),
+        )
+            .animate()
+            .fadeIn(delay: 120.ms, duration: 400.ms)
+            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        VitalCard(
+          label: 'Blood Pressure',
+          value: bpText,
+          unit: 'mmHg',
+          icon: Icons.monitor_heart_rounded,
+          accentColor: const Color(0xFF7C4DFF),
+          subtitle: 'On-demand & algorithm',
+          isAlert: v.systolic != null && (v.systolic! <= 90 || v.systolic! >= 220),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => const VitalsDetailsPage(
+              title: 'Blood Pressure (Systolic)',
+              dbColumnName: 'bpSys',
+              unit: 'mmHg',
+              accentColor: Color(0xFF7C4DFF),
+            ),
+          )),
+        )
+            .animate()
+            .fadeIn(delay: 180.ms, duration: 400.ms)
+            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+      ]),
+    );
+  }
+
+  Widget _buildSecondaryVitalsGrid(BandState v) {
+    return SliverGrid(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 16,
+        crossAxisSpacing: 16,
+        childAspectRatio: 0.95,
+      ),
+      delegate: SliverChildListDelegate([
         VitalCard(
           label: 'ECG',
           value: v.lastEcgResult != null && v.lastEcgResult!.aveHeart > 0
@@ -329,84 +547,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           )),
         )
             .animate()
-            .fadeIn(delay: 40.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
-        VitalCard(
-          label: 'SpO₂',
-          value: v.spo2 > 0 ? '${v.spo2}' : '--',
-          unit: '%',
-          icon: Icons.water_drop_rounded,
-          accentColor: const Color(0xFF00BFA5),
-          subtitle: 'Oxygen saturation',
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => const VitalsDetailsPage(
-              title: 'SpO₂',
-              dbColumnName: 'spo2',
-              unit: '%',
-              accentColor: Color(0xFF00BFA5),
-            ),
-          )),
-        )
-            .animate()
-            .fadeIn(delay: 80.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
-        VitalCard(
-          label: 'Respiration',
-          value: v.respiratoryRate > 0 ? '${v.respiratoryRate}' : '--',
-          unit: 'rpm',
-          icon: Icons.air_rounded,
-          accentColor: const Color(0xFF00ACC1),
-          subtitle: 'Breaths per minute',
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => const VitalsDetailsPage(
-              title: 'Respiratory Rate',
-              dbColumnName: 'respirationRate',
-              unit: 'rpm',
-              accentColor: Color(0xFF00ACC1),
-            ),
-          )),
-        )
-            .animate()
-            .fadeIn(delay: 120.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
-        VitalCard(
-          label: 'Temperature',
-          value: v.tempC > 0 ? '${v.tempC.toStringAsFixed(1)}°' : '--',
-          unit: 'C',
-          icon: Icons.thermostat_rounded,
-          accentColor: const Color(0xFFFFA726),
-          subtitle: v.tempSkin > 0
-              ? 'Core: ${v.tempC > 0 ? v.tempC.toStringAsFixed(1) : "--"}° | Skin: ${v.tempSkin.toStringAsFixed(1)}°'
-              : 'Body & Skin Temp',
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => const VitalsDetailsPage(
-              title: 'Body Temp',
-              dbColumnName: 'tempC',
-              unit: '°C',
-              accentColor: Color(0xFFFFA726),
-            ),
-          )),
-        )
-            .animate()
-            .fadeIn(delay: 160.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
-        VitalCard(
-          label: 'Blood Pressure',
-          value: bpText,
-          unit: 'mmHg',
-          icon: Icons.monitor_heart_rounded,
-          accentColor: const Color(0xFF7C4DFF),
-          subtitle: 'Systolic / Diastolic',
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => const VitalsDetailsPage(
-              title: 'Blood Pressure (Systolic)',
-              dbColumnName: 'bpSys',
-              unit: 'mmHg',
-              accentColor: Color(0xFF7C4DFF),
-            ),
-          )),
-        )
-            .animate()
+            .fadeIn(duration: 400.ms)
             .slideY(begin: 0.2, end: 0, duration: 400.ms),
         VitalCard(
           label: 'HRV',
@@ -414,7 +555,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           unit: 'ms',
           icon: Icons.favorite_border_rounded,
           accentColor: const Color(0xFFE91E63),
-          subtitle: 'Heart Rate Variability',
+          subtitle: '5–15m / overnight',
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'HRV',
@@ -425,7 +566,29 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           )),
         )
             .animate()
-            .fadeIn(delay: 320.ms, duration: 400.ms)
+            .fadeIn(delay: 60.ms, duration: 400.ms)
+            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        VitalCard(
+          label: 'Temperature',
+          value: v.tempC > 0 ? '${v.tempC.toStringAsFixed(1)}°' : '--',
+          unit: 'C',
+          icon: Icons.thermostat_rounded,
+          accentColor: const Color(0xFFFFA726),
+          subtitle: v.tempSkin > 0
+              ? 'Core: ${v.tempC > 0 ? v.tempC.toStringAsFixed(1) : "--"}° | Skin: ${v.tempSkin.toStringAsFixed(1)}°'
+              : '30–60 min interval',
+          isAlert: v.tempC > 0 && (v.tempC <= 35.0 || v.tempC >= 39.1),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => const VitalsDetailsPage(
+              title: 'Body Temp',
+              dbColumnName: 'tempC',
+              unit: '°C',
+              accentColor: Color(0xFFFFA726),
+            ),
+          )),
+        )
+            .animate()
+            .fadeIn(delay: 120.ms, duration: 400.ms)
             .slideY(begin: 0.2, end: 0, duration: 400.ms),
         VitalCard(
           label: 'Stress',
@@ -433,7 +596,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           unit: '',
           icon: Icons.psychology_rounded,
           accentColor: const Color(0xFF9C27B0),
-          subtitle: 'Stress Level',
+          subtitle: '15–30 min interval',
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'Stress Level',
@@ -444,15 +607,28 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           )),
         )
             .animate()
-            .fadeIn(delay: 400.ms, duration: 400.ms)
+            .fadeIn(delay: 180.ms, duration: 400.ms)
             .slideY(begin: 0.2, end: 0, duration: 400.ms),
+      ]),
+    );
+  }
+
+  Widget _buildFunctionalVitalsGrid(BandState v) {
+    return SliverGrid(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 16,
+        crossAxisSpacing: 16,
+        childAspectRatio: 0.95,
+      ),
+      delegate: SliverChildListDelegate([
         VitalCard(
           label: 'Steps',
           value: v.steps > 0 ? '${v.steps}' : '--',
           unit: 'steps',
           icon: Icons.directions_walk_rounded,
           accentColor: const Color(0xFF4CAF50),
-          subtitle: 'Daily Activity',
+          subtitle: '5 min cumulative',
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'Steps',
@@ -463,7 +639,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           )),
         )
             .animate()
-            .fadeIn(delay: 480.ms, duration: 400.ms)
+            .fadeIn(duration: 400.ms)
             .slideY(begin: 0.2, end: 0, duration: 400.ms),
         VitalCard(
           label: 'Distance',
@@ -471,7 +647,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           unit: 'km',
           icon: Icons.route_rounded,
           accentColor: const Color(0xFF2196F3),
-          subtitle: 'Estimated',
+          subtitle: '5–15 min cumulative',
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'Distance',
@@ -482,7 +658,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           )),
         )
             .animate()
-            .fadeIn(delay: 560.ms, duration: 400.ms)
+            .fadeIn(delay: 60.ms, duration: 400.ms)
             .slideY(begin: 0.2, end: 0, duration: 400.ms),
         VitalCard(
           label: 'Calories',
@@ -490,7 +666,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           unit: 'kcal',
           icon: Icons.local_fire_department_rounded,
           accentColor: const Color(0xFFFF5722),
-          subtitle: 'Burned today',
+          subtitle: '15–60 min cumulative',
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'Calories',
@@ -501,7 +677,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           )),
         )
             .animate()
-            .fadeIn(delay: 640.ms, duration: 400.ms)
+            .fadeIn(delay: 120.ms, duration: 400.ms)
             .slideY(begin: 0.2, end: 0, duration: 400.ms),
         VitalCard(
           label: 'Sleep',
@@ -513,10 +689,10 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           accentColor: const Color(0xFF5C6BC0),
           subtitle: v.totalSleepMinutes > 0
               ? 'Deep: ${v.deepSleepMinutes}m | Light: ${v.lightSleepMinutes}m'
-              : 'Sleep Tracking',
+              : 'Local classification',
         )
             .animate()
-            .fadeIn(delay: 720.ms, duration: 400.ms)
+            .fadeIn(delay: 180.ms, duration: 400.ms)
             .slideY(begin: 0.2, end: 0, duration: 400.ms),
       ]),
     );

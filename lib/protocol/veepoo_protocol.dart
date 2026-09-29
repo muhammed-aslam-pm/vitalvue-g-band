@@ -95,6 +95,16 @@ class BandState {
   final String activePhase;
   final String? vitalGapWarning;
 
+  // Clinical Architecture & Personal Baseline fields
+  final int news2Score;
+  final int personalBaselineScore;
+  final String trendStatus;
+  final bool isRrValidated;
+  final double rrConfidence;
+  final String rrSource;
+  final Map<String, String> parameterFreshness;
+  final String clinicalSummary;
+
   const BandState({
     this.connectionStatus = BleConnectionStatus.disconnected,
     this.hr = 0,
@@ -129,6 +139,14 @@ class BandState {
     this.cycleCount = 0,
     this.activePhase = '',
     this.vitalGapWarning,
+    this.news2Score = 0,
+    this.personalBaselineScore = 85,
+    this.trendStatus = 'stable',
+    this.isRrValidated = false,
+    this.rrConfidence = 0.0,
+    this.rrSource = '',
+    this.parameterFreshness = const {},
+    this.clinicalSummary = '',
   });
 
   BandState copyWith({
@@ -168,6 +186,14 @@ class BandState {
     String? activePhase,
     String? vitalGapWarning,
     bool clearWarning = false,
+    int? news2Score,
+    int? personalBaselineScore,
+    String? trendStatus,
+    bool? isRrValidated,
+    double? rrConfidence,
+    String? rrSource,
+    Map<String, String>? parameterFreshness,
+    String? clinicalSummary,
   }) {
     return BandState(
       connectionStatus: connectionStatus ?? this.connectionStatus,
@@ -203,6 +229,14 @@ class BandState {
       cycleCount: cycleCount ?? this.cycleCount,
       activePhase: activePhase ?? this.activePhase,
       vitalGapWarning: clearWarning ? null : (vitalGapWarning ?? this.vitalGapWarning),
+      news2Score: news2Score ?? this.news2Score,
+      personalBaselineScore: personalBaselineScore ?? this.personalBaselineScore,
+      trendStatus: trendStatus ?? this.trendStatus,
+      isRrValidated: isRrValidated ?? this.isRrValidated,
+      rrConfidence: rrConfidence ?? this.rrConfidence,
+      rrSource: rrSource ?? this.rrSource,
+      parameterFreshness: parameterFreshness ?? this.parameterFreshness,
+      clinicalSummary: clinicalSummary ?? this.clinicalSummary,
     );
   }
 }

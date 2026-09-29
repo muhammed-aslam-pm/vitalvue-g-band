@@ -66,6 +66,9 @@ class BandVitalsApi {
     int phoneBattery = -1,
     bool isConnected = true,
     bool isRemoved = false,
+    int? news2Score,
+    int? personalBaselineScore,
+    bool isRrValidated = false,
     DateTime? recordedAt,
   }) {
     final now = DateTime.now().toUtc();
@@ -93,6 +96,9 @@ class BandVitalsApi {
       'phone_battery': phoneBattery,
       'is_connected': isConnected,
       'is_removed': isRemoved,
+      if (news2Score != null) 'news2_score': news2Score,
+      if (personalBaselineScore != null) 'baseline_score': personalBaselineScore,
+      'rr_validated': isRrValidated,
       'timestamp': effectiveRecordedAt.millisecondsSinceEpoch,
       'recorded_at': effectiveRecordedAt.toIso8601String(),
       'created_at': now.toIso8601String(),
@@ -119,6 +125,9 @@ class BandVitalsApi {
     int phoneBattery = -1,
     bool isConnected = true,
     bool isRemoved = false,
+    int? news2Score,
+    int? personalBaselineScore,
+    bool isRrValidated = false,
     DateTime? recordedAt,
   }) async {
     final body = buildVitalPayload(
@@ -141,6 +150,9 @@ class BandVitalsApi {
       phoneBattery: phoneBattery,
       isConnected: isConnected,
       isRemoved: isRemoved,
+      news2Score: news2Score,
+      personalBaselineScore: personalBaselineScore,
+      isRrValidated: isRrValidated,
       recordedAt: recordedAt,
     );
 

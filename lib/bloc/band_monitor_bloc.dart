@@ -257,6 +257,16 @@ class BandMonitorBloc extends Bloc<BandMonitorEvent, BandMonitorState> {
         cycleCount: data['cycleCount'] as int? ?? 0,
         activePhase: data['activePhase'] as String? ?? '',
         vitalGapWarning: data['vitalGapWarning'] as String?,
+        news2Score: data['news2Score'] as int? ?? 0,
+        personalBaselineScore: data['personalBaselineScore'] as int? ?? 85,
+        trendStatus: data['trendStatus'] as String? ?? 'stable',
+        isRrValidated: data['isRrValidated'] as bool? ?? false,
+        rrConfidence: (data['rrConfidence'] as num?)?.toDouble() ?? 0.0,
+        rrSource: data['rrSource'] as String? ?? '',
+        parameterFreshness: data['parameterFreshness'] != null
+            ? Map<String, String>.from(data['parameterFreshness'] as Map)
+            : const {},
+        clinicalSummary: data['clinicalSummary'] as String? ?? '',
       );
       
       if (!isClosed) add(_BandStateUpdated(state));

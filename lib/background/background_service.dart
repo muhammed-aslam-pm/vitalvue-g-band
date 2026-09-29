@@ -8,6 +8,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 
 import '../auth/auth_token_store.dart';
+import '../config/vitalvue_config.dart';
 import 'background_preferences.dart';
 import '../cloud/vitals_sse_service.dart';
 import '../cloud/sse_events.dart';
@@ -828,9 +829,12 @@ void onStart(ServiceInstance service) async {
       }
     }
 
+    final profileConfig = VitalVueProfileConfig.current;
+
     session = BandSessionService(
       patientId: profile.id,
       deviceId: deviceId,
+      profileConfig: profileConfig,
       personalInfo: PersonalInfo(
         age: profile.age ?? 30,
         sex: (profile.gender ?? 'Male') == 'Male' ? 1 : 0,
@@ -1071,6 +1075,16 @@ void onStart(ServiceInstance service) async {
         'cycleCount': state.cycleCount,
         'activePhase': state.activePhase,
         'vitalGapWarning': state.vitalGapWarning,
+
+        // Clinical Architecture & Personal Baseline fields
+        'news2Score': state.news2Score,
+        'personalBaselineScore': state.personalBaselineScore,
+        'trendStatus': state.trendStatus,
+        'isRrValidated': state.isRrValidated,
+        'rrConfidence': state.rrConfidence,
+        'rrSource': state.rrSource,
+        'parameterFreshness': state.parameterFreshness,
+        'clinicalSummary': state.clinicalSummary,
 
         // ECG fields
         'isEcgMeasuring': state.isEcgMeasuring,
