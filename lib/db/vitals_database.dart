@@ -118,6 +118,93 @@ CREATE TABLE vitals (
     return await db.insert('vitals', mapped);
   }
 
+  /// Batches processing of historical records in a single database transaction
+  /// to eliminate I/O disk lockups.
+  Future<void> upsertHistoryRecords({
+    required String deviceId,
+    required int patientId,
+    required List<Map<String, dynamic>> records,
+  }) async {
+    if (records.isEmpty) return;
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      for (final rec in records) {
+        final hr = rec['hr'] as int? ?? 0;
+        final sys = rec['bpSys'] as int? ?? 0;
+        final dia = rec['bpDia'] as int? ?? 0;
+        final tempC = (rec['tempC'] as num?)?.toDouble() ?? 0.0;
+        final tempSkin = (rec['tempSkin'] as num?)?.toDouble() ?? 0.0;
+        final steps = rec['steps'] as int? ?? 0;
+        final calories = (rec['calories'] as num?)?.toDouble() ?? 0.0;
+        final distanceKm = (rec['distanceKm'] as num?)?.toDouble() ?? 0.0;
+        final stress = (rec['stress'] ?? '0').toString();
+        final spo2 = rec['spo2'] as int? ?? 0;
+        final rr = rec['respirationRate'] as int? ?? 0;
+        final ts = rec['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
+
+        if (hr == 0 && sys == 0 && tempC == 0.0 && steps == 0) continue;
+
+        // Check deduplication within window
+        final existingIngested = await txn.query(
+          'vitals',
+          columns: ['_id'],
+          where: 'device_id = ? AND timestamp >= ? AND timestamp <= ? AND isIngested = 1',
+          whereArgs: [deviceId, ts - 150000, ts + 150000],
+          limit: 1,
+        );
+        final alreadyIngested = existingIngested.isNotEmpty;
+
+        final mapped = <String, dynamic>{
+          'timestamp': ts,
+          'patient_id': patientId,
+          'device_id': deviceId,
+          'hr': hr,
+          'spo2': spo2,
+          'respirationRate': rr,
+          'tempC': tempC,
+          'tempSkin': tempSkin,
+          'bpSys': sys,
+          'bpDia': dia,
+          'hrv': rec['hrv'] as int? ?? 0,
+          'stress': stress,
+          'steps': steps,
+          'calories': calories,
+          'distanceKm': distanceKm,
+          'battery': -1,
+          'isRemoved': 0,
+          'isIngested': alreadyIngested ? 1 : 0,
+        };
+
+        final exactMatch = await txn.query(
+          'vitals',
+          where: 'timestamp = ? AND device_id = ?',
+          whereArgs: [ts, deviceId],
+          limit: 1,
+        );
+
+        if (exactMatch.isNotEmpty) {
+          final existingMap = Map<String, dynamic>.from(exactMatch.first);
+          mapped.forEach((key, val) {
+            if (val == 0 || val == 0.0 || val == null || val == '0' || val == '') {
+              final oldVal = existingMap[key];
+              if (oldVal != null && oldVal != 0 && oldVal != 0.0 && oldVal != '0' && oldVal != '') {
+                mapped[key] = oldVal;
+              }
+            }
+          });
+          await txn.update(
+            'vitals',
+            mapped,
+            where: 'timestamp = ? AND device_id = ?',
+            whereArgs: [ts, deviceId],
+          );
+        } else {
+          await txn.insert('vitals', mapped);
+        }
+      }
+    });
+  }
+
   Future<int> insertVital(Map<String, dynamic> vital) async {
     final db = await instance.database;
     // ensure bools are integers

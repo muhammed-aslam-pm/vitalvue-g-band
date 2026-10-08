@@ -1,4 +1,3 @@
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -30,29 +29,27 @@ class VitalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget cardContent = BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-      child: Container(
-        decoration: BoxDecoration(
+    Widget cardContent = Container(
+      decoration: BoxDecoration(
+        color: isAlert
+            ? const Color(0x22E53935)
+            : Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
           color: isAlert
-              ? const Color(0x33E53935)
-              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: isAlert
-                ? const Color(0xAAE53935)
-                : accentColor.withValues(alpha: 0.35),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: accentColor.withValues(alpha: 0.15),
-              blurRadius: 24,
-              spreadRadius: 2,
-            ),
-          ],
+              ? const Color(0xAAE53935)
+              : accentColor.withValues(alpha: 0.25),
+          width: 1.5,
         ),
-        padding: const EdgeInsets.all(20),
+        boxShadow: [
+          BoxShadow(
+            color: accentColor.withValues(alpha: 0.08),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -131,8 +128,7 @@ class VitalCard extends StatelessWidget {
             ],
           ],
         ),
-      ),
-    );
+      );
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),

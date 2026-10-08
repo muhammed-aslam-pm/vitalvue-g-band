@@ -23,11 +23,11 @@ class BandVitalsApi {
         headers: {'Content-Type': 'application/json'},
       ));
       _dio.interceptors.add(LogInterceptor(
-        request: true,
-        requestHeader: true,
-        requestBody: true,
+        request: false,
+        requestHeader: false,
+        requestBody: false,
         responseHeader: false,
-        responseBody: true,
+        responseBody: false,
         error: true,
       ));
       if (authInterceptor != null) {

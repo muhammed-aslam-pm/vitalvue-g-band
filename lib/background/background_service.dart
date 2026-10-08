@@ -938,75 +938,24 @@ void onStart(ServiceInstance service) async {
       },
       onHistoryRecords: (records) async {
         final db = VitalsDatabase.instance;
-        debugPrint('[Background] Processing ${records.length} historical records from band...');
-        int deduplicatedCount = 0;
-        int queuedCount = 0;
-
-        for (final rec in records) {
-          final hr = rec['hr'] as int? ?? 0;
-          final sys = rec['bpSys'] as int? ?? 0;
-          final dia = rec['bpDia'] as int? ?? 0;
-          final tempC = (rec['tempC'] as num?)?.toDouble() ?? 0.0;
-          final tempSkin = (rec['tempSkin'] as num?)?.toDouble() ?? 0.0;
-          final steps = rec['steps'] as int? ?? 0;
-          final calories = (rec['calories'] as num?)?.toDouble() ?? 0.0;
-          final distanceKm = (rec['distanceKm'] as num?)?.toDouble() ?? 0.0;
-          final stress = (rec['stress'] ?? 0).toString();
-          final spo2 = rec['spo2'] as int? ?? 0;
-          final rr = rec['respirationRate'] as int? ?? 0;
-          final ts = rec['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
-
-          // Guard against empty readings
-          if (hr == 0 && sys == 0 && tempC == 0.0 && steps == 0) continue;
-
-          // Check if this time window was already ingested live during active connection
-          final alreadyIngested = await db.hasIngestedVitalNear(
-            deviceId: deviceId,
-            timestamp: ts,
-            windowMs: 150000, // ±2.5 min window
-          );
-
-          if (alreadyIngested) {
-            deduplicatedCount++;
-          } else {
-            queuedCount++;
-          }
-
-          await db.upsertVital({
-            'timestamp': ts,
-            'patient_id': profile.id,
-            'device_id': deviceId,
-            'hr': hr,
-            'spo2': spo2,
-            'respirationRate': rr,
-            'tempC': tempC,
-            'tempSkin': tempSkin,
-            'bpSys': sys,
-            'bpDia': dia,
-            'hrv': rec['hrv'] as int? ?? 0,
-            'stress': stress,
-            'steps': steps,
-            'calories': calories,
-            'distanceKm': distanceKm,
-            'battery': -1,
-            'isRemoved': false,
-            'isIngested': alreadyIngested ? 1 : 0,
-          });
-        }
+        debugPrint('[Background] Processing ${records.length} historical records from band (batched)...');
+        await db.upsertHistoryRecords(
+          deviceId: deviceId,
+          patientId: profile.id,
+          records: records,
+        );
 
         Sentry.addBreadcrumb(Breadcrumb(
-          message: 'History records processed: $queuedCount queued, $deduplicatedCount deduplicated',
+          message: 'Historical records batched: ${records.length} records processed',
           category: 'sync.history',
           data: {
-            'queued_count': queuedCount,
-            'deduplicated_count': deduplicatedCount,
             'total_records': records.length,
             'device_id': deviceId,
           },
           level: SentryLevel.info,
         ));
 
-        debugPrint('[Background] 📦 History sync: $queuedCount records queued for bulk ingest, $deduplicatedCount already covered by live ingest');
+        debugPrint('[Background] 📦 History sync: processed ${records.length} historical records into SQLite');
       },
       onHistoryComplete: () async {
         if (isManualDisconnect) {
@@ -1047,6 +996,7 @@ void onStart(ServiceInstance service) async {
       await session?.stopEcgMeasurement();
     });
 
+    DateTime? lastNotifTime;
     session!.stateStream.listen((state) async {
       // Broadcast state back to UI
       service.invoke('vitals_update', {
@@ -1224,36 +1174,43 @@ void onStart(ServiceInstance service) async {
       }
 
       if (service is AndroidServiceInstance) {
-        if (isConnected) {
-          final cycleInfo = state.cycleCount > 0 ? ' (Cycle #${state.cycleCount})' : '';
-          flutterLocalNotificationsPlugin.show(
-            id: 888,
-            title: 'GBand Connected',
-            body:
-                'HR: ${state.hr} | SpO2: ${state.spo2}% | 24/7: ${state.consistencyScore.toStringAsFixed(0)}%$cycleInfo',
-            notificationDetails: const NotificationDetails(
-              android: AndroidNotificationDetails(
-                'gband_monitor_service',
-                'GBand Monitoring Service',
-                icon: 'ic_bg_service_small',
-                ongoing: true,
+        final now = DateTime.now();
+        final shouldUpdateNotif = lastNotifTime == null ||
+            now.difference(lastNotifTime!).inSeconds >= 5 ||
+            !isConnected;
+        if (shouldUpdateNotif) {
+          lastNotifTime = now;
+          if (isConnected) {
+            final cycleInfo = state.cycleCount > 0 ? ' (Cycle #${state.cycleCount})' : '';
+            flutterLocalNotificationsPlugin.show(
+              id: 888,
+              title: 'GBand Connected',
+              body:
+                  'HR: ${state.hr} | SpO2: ${state.spo2}% | 24/7: ${state.consistencyScore.toStringAsFixed(0)}%$cycleInfo',
+              notificationDetails: const NotificationDetails(
+                android: AndroidNotificationDetails(
+                  'gband_monitor_service',
+                  'GBand Monitoring Service',
+                  icon: 'ic_bg_service_small',
+                  ongoing: true,
+                ),
               ),
-            ),
-          );
-        } else {
-          flutterLocalNotificationsPlugin.show(
-            id: 888,
-            title: 'GBand Disconnected',
-            body: 'Attempting to reconnect...',
-            notificationDetails: const NotificationDetails(
-              android: AndroidNotificationDetails(
-                'gband_monitor_service',
-                'GBand Monitoring Service',
-                icon: 'ic_bg_service_small',
-                ongoing: true,
+            );
+          } else {
+            flutterLocalNotificationsPlugin.show(
+              id: 888,
+              title: 'GBand Disconnected',
+              body: 'Attempting to reconnect...',
+              notificationDetails: const NotificationDetails(
+                android: AndroidNotificationDetails(
+                  'gband_monitor_service',
+                  'GBand Monitoring Service',
+                  icon: 'ic_bg_service_small',
+                  ongoing: true,
+                ),
               ),
-            ),
-          );
+            );
+          }
         }
       }
     });
@@ -1270,14 +1227,6 @@ void onStart(ServiceInstance service) async {
           baseUrl: 'https://vitalvue-api.genesysailabs.com',
           authInterceptor: interceptor,
         );
-        api.changeDevice(deviceId).then((success) {
-          if (success) {
-            debugPrint(
-                '[Background] Successfully registered device $deviceId to patient');
-          }
-        }).catchError((e) {
-          debugPrint('[Background] Error calling changeDevice: $e');
-        });
 
         // Flush any uningested vitals history accumulated while offline/disconnected
         await syncPendingVitals(

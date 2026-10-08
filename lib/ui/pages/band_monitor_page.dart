@@ -1,4 +1,3 @@
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -306,10 +305,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               accentColor: Color(0xFFE53935),
             ),
           )),
-        )
-            .animate()
-            .fadeIn(duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        ),
         VitalCard(
           label: 'ECG',
           value: v.lastEcgResult != null && v.lastEcgResult!.aveHeart > 0
@@ -327,10 +323,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               child: const EcgMeasurementPage(),
             ),
           )),
-        )
-            .animate()
-            .fadeIn(delay: 40.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        ),
         VitalCard(
           label: 'SpO₂',
           value: v.spo2 > 0 ? '${v.spo2}' : '--',
@@ -346,10 +339,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               accentColor: Color(0xFF00BFA5),
             ),
           )),
-        )
-            .animate()
-            .fadeIn(delay: 80.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        ),
         VitalCard(
           label: 'Respiration',
           value: v.respiratoryRate > 0 ? '${v.respiratoryRate}' : '--',
@@ -365,10 +355,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               accentColor: Color(0xFF00ACC1),
             ),
           )),
-        )
-            .animate()
-            .fadeIn(delay: 120.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        ),
         VitalCard(
           label: 'Temperature',
           value: v.tempC > 0 ? '${v.tempC.toStringAsFixed(1)}°' : '--',
@@ -386,10 +373,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               accentColor: Color(0xFFFFA726),
             ),
           )),
-        )
-            .animate()
-            .fadeIn(delay: 160.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        ),
         VitalCard(
           label: 'Blood Pressure',
           value: bpText,
@@ -405,9 +389,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               accentColor: Color(0xFF7C4DFF),
             ),
           )),
-        )
-            .animate()
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        ),
         VitalCard(
           label: 'HRV',
           value: (v.hrv != null && v.hrv! > 0) ? '${v.hrv}' : '--',
@@ -423,10 +405,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               accentColor: Color(0xFFE91E63),
             ),
           )),
-        )
-            .animate()
-            .fadeIn(delay: 320.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        ),
         VitalCard(
           label: 'Stress',
           value: (v.stress != null && v.stress! > 0) ? '${v.stress}' : '--',
@@ -442,10 +421,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               accentColor: Color(0xFF9C27B0),
             ),
           )),
-        )
-            .animate()
-            .fadeIn(delay: 400.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        ),
         VitalCard(
           label: 'Steps',
           value: v.steps > 0 ? '${v.steps}' : '--',
@@ -461,10 +437,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               accentColor: Color(0xFF4CAF50),
             ),
           )),
-        )
-            .animate()
-            .fadeIn(delay: 480.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        ),
         VitalCard(
           label: 'Distance',
           value: v.distanceKm > 0 ? v.distanceKm.toStringAsFixed(2) : '--',
@@ -480,10 +453,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               accentColor: Color(0xFF2196F3),
             ),
           )),
-        )
-            .animate()
-            .fadeIn(delay: 560.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        ),
         VitalCard(
           label: 'Calories',
           value: v.calories > 0 ? v.calories.toStringAsFixed(0) : '--',
@@ -499,10 +469,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               accentColor: Color(0xFFFF5722),
             ),
           )),
-        )
-            .animate()
-            .fadeIn(delay: 640.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        ),
         VitalCard(
           label: 'Sleep',
           value: v.totalSleepMinutes > 0
@@ -514,10 +481,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           subtitle: v.totalSleepMinutes > 0
               ? 'Deep: ${v.deepSleepMinutes}m | Light: ${v.lightSleepMinutes}m'
               : 'Sleep Tracking',
-        )
-            .animate()
-            .fadeIn(delay: 720.ms, duration: 400.ms)
-            .slideY(begin: 0.2, end: 0, duration: 400.ms),
+        ),
       ]),
     );
   }
@@ -622,11 +586,12 @@ class _BackgroundGradient extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: color,
-        ),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
-          child: const SizedBox.expand(),
+          gradient: RadialGradient(
+            colors: [
+              color,
+              color.withValues(alpha: 0.0),
+            ],
+          ),
         ),
       );
 }

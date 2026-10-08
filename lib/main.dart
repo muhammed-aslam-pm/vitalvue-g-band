@@ -72,11 +72,7 @@ void main() async {
     },
     appRunner: () async {
       runApp(
-        SentryScreenshotWidget(
-          child: SentryUserInteractionWidget(
-            child: const GBandMonitorApp(),
-          ),
-        ),
+        const GBandMonitorApp(),
       );
     },
   );
