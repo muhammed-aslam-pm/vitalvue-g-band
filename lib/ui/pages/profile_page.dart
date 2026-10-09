@@ -6,6 +6,7 @@ import '../../auth/user_profile.dart';
 import '../../bloc/auth_bloc.dart';
 import '../../bloc/auth_event.dart';
 import '../../background/background_preferences.dart';
+import '../theme/app_theme.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key, required this.profile});
@@ -75,7 +76,7 @@ class _ProfilePageState extends State<ProfilePage> {
             // Avatar
             CircleAvatar(
               radius: 48,
-              backgroundColor: const Color(0xFF1A73E8).withValues(alpha: 0.2),
+              backgroundColor: AppColors.primary.withValues(alpha: 0.15),
               child: Text(
                 profile.fullName.isNotEmpty
                     ? profile.fullName[0].toUpperCase()
@@ -83,7 +84,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 style: GoogleFonts.inter(
                   fontSize: 36,
                   fontWeight: FontWeight.bold,
-                  color: const Color(0xFF1A73E8),
+                  color: AppColors.primary,
                 ),
               ),
             ),
@@ -102,24 +103,24 @@ class _ProfilePageState extends State<ProfilePage> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A73E8).withValues(alpha: 0.15),
+                color: AppColors.primary.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                    color: const Color(0xFF1A73E8).withValues(alpha: 0.4)),
+                    color: AppColors.primary.withValues(alpha: 0.4)),
               ),
               child: Text(
                 _roleLabel,
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF1A73E8),
+                  color: AppColors.primary,
                   letterSpacing: 0.4,
                 ),
               ),
             ),
             Text(
               'ID: ${profile.userId}',
-              style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+              style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 32),
 
@@ -189,7 +190,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   color: Colors.transparent,
                   child: SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    activeThumbColor: const Color(0xFF1A73E8),
+                    activeThumbColor: Colors.white,
+                    activeTrackColor: AppColors.primary,
                     title: Text(
                       'Voice Announcements',
                       style: TextStyle(
@@ -197,13 +199,10 @@ class _ProfilePageState extends State<ProfilePage> {
                           fontSize: 15,
                           fontWeight: FontWeight.w500),
                     ),
-                    subtitle: Text(
+                    subtitle: const Text(
                       'Verbal read-out of warnings and critical alerts',
                       style: TextStyle(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6),
+                          color: AppColors.textSecondary,
                           fontSize: 13),
                     ),
                     value: _enableTts,
@@ -217,7 +216,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   color: Colors.transparent,
                   child: SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    activeThumbColor: const Color(0xFF1A73E8),
+                    activeThumbColor: Colors.white,
+                    activeTrackColor: AppColors.primary,
                     title: Text(
                       'Push Notifications',
                       style: TextStyle(
@@ -225,13 +225,10 @@ class _ProfilePageState extends State<ProfilePage> {
                           fontSize: 15,
                           fontWeight: FontWeight.w500),
                     ),
-                    subtitle: Text(
+                    subtitle: const Text(
                       'Heads-up banners for warnings and critical alerts',
                       style: TextStyle(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6),
+                          color: AppColors.textSecondary,
                           fontSize: 13),
                     ),
                     value: _enablePush,
@@ -245,7 +242,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   color: Colors.transparent,
                   child: SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    activeThumbColor: const Color(0xFF1A73E8),
+                    activeThumbColor: Colors.white,
+                    activeTrackColor: AppColors.primary,
                     title: Text(
                       'Accidental Disconnection Alert',
                       style: TextStyle(
@@ -253,13 +251,10 @@ class _ProfilePageState extends State<ProfilePage> {
                           fontSize: 15,
                           fontWeight: FontWeight.w500),
                     ),
-                    subtitle: Text(
+                    subtitle: const Text(
                       'Alert, beep sound, and push notification when band disconnects accidentally',
                       style: TextStyle(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6),
+                          color: AppColors.textSecondary,
                           fontSize: 13),
                     ),
                     value: _enableAccidentalDisconnect,
@@ -284,8 +279,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   context.read<AuthBloc>().add(const AuthLogout());
                 },
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFFE53935),
-                  side: const BorderSide(color: Color(0xFFE53935)),
+                  foregroundColor: AppColors.red,
+                  side: const BorderSide(color: AppColors.red),
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -313,7 +308,7 @@ class _ProfilePageState extends State<ProfilePage> {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1)),
+        border: Border.all(color: AppColors.cardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

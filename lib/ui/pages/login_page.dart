@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../bloc/auth_bloc.dart';
 import '../../bloc/auth_event.dart';
 import '../../bloc/auth_state.dart';
+import '../theme/app_theme.dart';
 import 'register_patient_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -77,7 +78,7 @@ class _LoginPageState extends State<LoginPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(state.message),
-          backgroundColor: const Color(0xFFE53935),
+          backgroundColor: AppColors.red,
           behavior: SnackBarBehavior.floating,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -94,13 +95,13 @@ class _LoginPageState extends State<LoginPage> {
           width: 72,
           height: 72,
           decoration: BoxDecoration(
-            color: const Color(0xFF1A73E8).withValues(alpha: 0.15),
+            color: AppColors.primary.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-                color: const Color(0xFF1A73E8).withValues(alpha: 0.3)),
+                color: AppColors.primary.withValues(alpha: 0.3)),
           ),
           child: const Icon(Icons.monitor_heart_rounded,
-              color: Color(0xFF1A73E8), size: 36),
+              color: AppColors.primary, size: 36),
         )
             .animate()
             .scale(
@@ -151,7 +152,7 @@ class _LoginPageState extends State<LoginPage> {
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1)),
+            border: Border.all(color: AppColors.cardBorder),
           ),
           child: AnimatedSwitcher(
             duration: 350.ms,
@@ -192,10 +193,10 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ),
         const SizedBox(height: 6),
-        Text(
+        const Text(
           'Enter your Staff / Nurse / Doctor ID to receive an OTP.',
           style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 13),
+              color: AppColors.textSecondary, fontSize: 13),
         ),
         const SizedBox(height: 24),
         _AuthField(
@@ -264,8 +265,8 @@ class _LoginPageState extends State<LoginPage> {
               onTap: isLoading
                   ? null
                   : () => context.read<AuthBloc>().add(const AuthLogout()),
-              child: Icon(Icons.arrow_back_rounded,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5), size: 20),
+              child: const Icon(Icons.arrow_back_rounded,
+                  color: AppColors.textSecondary, size: 20),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -283,14 +284,14 @@ class _LoginPageState extends State<LoginPage> {
         const SizedBox(height: 8),
         RichText(
           text: TextSpan(
-            style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 13),
+            style: const TextStyle(
+                color: AppColors.textSecondary, fontSize: 13),
             children: [
               const TextSpan(text: 'An OTP was sent to the contact registered for '),
               TextSpan(
                 text: userId,
                 style: const TextStyle(
-                    color: Color(0xFF1A73E8), fontWeight: FontWeight.w600),
+                    color: AppColors.primary, fontWeight: FontWeight.w600),
               ),
               const TextSpan(text: '.'),
             ],
@@ -324,10 +325,10 @@ class _LoginPageState extends State<LoginPage> {
                 : () => context
                     .read<AuthBloc>()
                     .add(AuthInitiateLogin(userId)),
-            child: Text(
+            child: const Text(
               'Resend OTP',
               style: TextStyle(
-                  color: const Color(0xFF1A73E8).withValues(alpha: 0.8),
+                  color: AppColors.primary,
                   fontSize: 13),
             ),
           ),
@@ -388,22 +389,22 @@ class _AuthField extends StatelessWidget {
         counterText: '',
         labelText: label,
         hintText: hint,
-        prefixIcon: Icon(icon, color: const Color(0xFF1A73E8), size: 20),
+        prefixIcon: Icon(icon, color: AppColors.primary, size: 20),
         labelStyle:
-            TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 14),
+            const TextStyle(color: AppColors.textSecondary, fontSize: 14),
         hintStyle:
-            TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4), fontSize: 14),
+            const TextStyle(color: AppColors.textMuted, fontSize: 14),
         filled: true,
-        fillColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+        fillColor: AppColors.surfaceElevated,
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide:
-              BorderSide(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.15)),
+              const BorderSide(color: AppColors.cardBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide:
-              const BorderSide(color: Color(0xFF1A73E8), width: 1.5),
+              const BorderSide(color: AppColors.primary, width: 1.5),
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -431,7 +432,7 @@ class _AuthButton extends StatelessWidget {
       height: 52,
       child: FilledButton.icon(
         style: FilledButton.styleFrom(
-          backgroundColor: const Color(0xFF1A73E8),
+          backgroundColor: AppColors.primary,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
@@ -462,12 +463,12 @@ class _BackgroundBlobs extends StatelessWidget {
         Positioned(
           top: -120,
           left: -80,
-          child: _blob(const Color(0x201A73E8), 300),
+          child: _blob(AppColors.primary.withValues(alpha: 0.15), 300),
         ),
         Positioned(
           bottom: -60,
           right: -80,
-          child: _blob(const Color(0x157C4DFF), 280),
+          child: _blob(AppColors.cyan.withValues(alpha: 0.10), 280),
         ),
       ],
     );

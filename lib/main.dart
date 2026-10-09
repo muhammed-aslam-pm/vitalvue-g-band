@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'auth/auth_interceptor.dart';
 import 'auth/auth_repository.dart';
@@ -23,6 +22,7 @@ import 'bloc/band_monitor_event.dart';
 import 'cloud/band_vitals_api.dart';
 import 'package:veepoo_sdk/veepoo_sdk.dart';
 import 'protocol/veepoo_protocol.dart';
+import 'ui/theme/app_theme.dart';
 
 // ── Configuration — edit these or pass via --dart-define ─────────────────────
 const _kDefaultSentryDsn =
@@ -49,7 +49,10 @@ void main() async {
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.dark,
+    statusBarIconBrightness: Brightness.light,
+    statusBarBrightness: Brightness.dark,
+    systemNavigationBarColor: AppColors.background,
+    systemNavigationBarIconBrightness: Brightness.light,
   ));
 
   VeepooSdk.onError = (error, stack, {action, context}) {
@@ -206,18 +209,7 @@ class _GBandMonitorAppState extends State<GBandMonitorApp> {
   }
 
   ThemeData _buildTheme() {
-    return ThemeData(
-      brightness: Brightness.light,
-      scaffoldBackgroundColor: const Color(0xFFF5F7FA),
-      colorScheme: const ColorScheme.light(
-        primary: Color(0xFF1A73E8),
-        secondary: Color(0xFF00BFA5),
-        surface: Colors.white,
-        error: Color(0xFFE53935),
-      ),
-      textTheme: GoogleFonts.interTextTheme(ThemeData.light().textTheme),
-      useMaterial3: true,
-    );
+    return AppTheme.darkTheme;
   }
 }
 
@@ -228,10 +220,10 @@ class _SplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Scaffold(
-      backgroundColor: Color(0xFFF5F7FA),
+      backgroundColor: AppColors.background,
       body: Center(
         child: CircularProgressIndicator(
-          color: Color(0xFF1A73E8),
+          color: AppColors.primary,
           strokeWidth: 2,
         ),
       ),

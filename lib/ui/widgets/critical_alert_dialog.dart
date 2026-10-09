@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../cloud/assigned_patient.dart';
 import '../../cloud/sse_events.dart';
 import '../../cloud/patients_repository.dart';
+import '../theme/app_theme.dart';
 import 'action_capture_dialog.dart';
 
 class CriticalAlertDialog extends StatefulWidget {
@@ -32,11 +33,11 @@ class _CriticalAlertDialogState extends State<CriticalAlertDialog> {
   Color get _severityColor {
     switch (widget.alert.severity.toLowerCase()) {
       case 'critical':
-        return const Color(0xFFE53935);
+        return AppColors.red;
       case 'warning':
-        return const Color(0xFFFFA726);
+        return AppColors.amber;
       default:
-        return const Color(0xFFE53935);
+        return AppColors.red;
     }
   }
 
@@ -122,12 +123,12 @@ class _CriticalAlertDialogState extends State<CriticalAlertDialog> {
                     children: [
                       _Pill(
                         label: 'Ward: ${widget.alert.wardName}',
-                        color: const Color(0xFF1A73E8),
+                        color: AppColors.primary,
                       ),
                       const SizedBox(width: 8),
                       _Pill(
                         label: 'Room No: ${widget.alert.roomNumber}',
-                        color: const Color(0xFF7C4DFF),
+                        color: AppColors.purple,
                       ),
                     ],
                   ),
@@ -436,11 +437,11 @@ class _VitalBox extends StatelessWidget {
   Color get _color {
     switch (status) {
       case 'Critical':
-        return const Color(0xFFE53935);
+        return AppColors.red;
       case 'Warning':
-        return const Color(0xFFFFA726);
+        return AppColors.amber;
       default:
-        return const Color(0xFF43A047);
+        return AppColors.green;
     }
   }
 

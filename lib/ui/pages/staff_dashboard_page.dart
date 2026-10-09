@@ -15,6 +15,7 @@ import '../../bloc/patients_state.dart';
 import '../../cloud/assigned_patient.dart';
 import '../widgets/critical_alert_dialog.dart';
 import '../widgets/patient_monitor_card.dart';
+import '../theme/app_theme.dart';
 import 'profile_page.dart';
 
 class StaffDashboardPage extends StatefulWidget {
@@ -218,7 +219,7 @@ class _LiveDot extends StatelessWidget {
           height: 7,
           decoration: const BoxDecoration(
             shape: BoxShape.circle,
-            color: Color(0xFF43A047),
+            color: AppColors.green,
           ),
         )
             .animate(onPlay: (c) => c.repeat())
@@ -231,7 +232,7 @@ class _LiveDot extends StatelessWidget {
         const Text(
           'LIVE',
           style: TextStyle(
-            color: Color(0xFF43A047),
+            color: AppColors.green,
             fontSize: 11,
             fontWeight: FontWeight.w800,
             letterSpacing: 1,
@@ -271,21 +272,21 @@ class _SummaryBar extends StatelessWidget {
           _SummaryChip(
             label: 'Critical',
             count: critical,
-            color: const Color(0xFFE53935),
+            color: AppColors.red,
             icon: Icons.emergency_rounded,
           ),
           const SizedBox(width: 8),
           _SummaryChip(
             label: 'Warning',
             count: warning,
-            color: const Color(0xFFFFA726),
+            color: AppColors.amber,
             icon: Icons.warning_amber_rounded,
           ),
           const SizedBox(width: 8),
           _SummaryChip(
             label: 'Stable',
             count: stable,
-            color: const Color(0xFF43A047),
+            color: AppColors.green,
             icon: Icons.check_circle_outline_rounded,
           ),
           const Spacer(),
@@ -504,8 +505,8 @@ class _ErrorView extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: onRetry,
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF1A73E8),
-                side: const BorderSide(color: Color(0xFF1A73E8)),
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.primary),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 shape: RoundedRectangleBorder(
@@ -531,12 +532,12 @@ class _Background extends StatelessWidget {
         Positioned(
           top: -80,
           right: -60,
-          child: _blob(const Color(0x261A73E8), 280),
+          child: _blob(AppColors.primary.withValues(alpha: 0.12), 280),
         ),
         Positioned(
           bottom: 80,
           left: -40,
-          child: _blob(const Color(0x1A7C4DFF), 240),
+          child: _blob(AppColors.cyan.withValues(alpha: 0.08), 240),
         ),
       ],
     );

@@ -10,6 +10,7 @@ import '../../bloc/band_monitor_bloc.dart';
 import '../../bloc/band_monitor_event.dart';
 import '../../bloc/band_monitor_state.dart';
 import '../../protocol/veepoo_protocol.dart';
+import '../theme/app_theme.dart';
 
 class EcgMeasurementPage extends StatefulWidget {
   const EcgMeasurementPage({super.key});
@@ -59,7 +60,7 @@ class _EcgMeasurementPageState extends State<EcgMeasurementPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -131,16 +132,9 @@ class _EcgMeasurementPageState extends State<EcgMeasurementPage>
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  const Color(0xFF1E293B),
-                  const Color(0xFF0F172A).withValues(alpha: 0.8),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              color: AppColors.surface,
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              border: Border.all(color: AppColors.cardBorder),
               boxShadow: [
                 BoxShadow(
                   color: const Color(0xFF00E676).withValues(alpha: 0.08),
@@ -305,9 +299,9 @@ class _EcgMeasurementPageState extends State<EcgMeasurementPage>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B).withValues(alpha: 0.6),
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        border: Border.all(color: AppColors.cardBorder),
       ),
       child: Row(
         children: [
@@ -437,7 +431,7 @@ class _EcgMeasurementPageState extends State<EcgMeasurementPage>
             decoration: BoxDecoration(
               color: const Color(0xFF090D16),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFF1E293B)),
+              border: Border.all(color: AppColors.cardBorder),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.5),
@@ -616,11 +610,9 @@ class _EcgMeasurementPageState extends State<EcgMeasurementPage>
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
-              ),
+              color: AppColors.surface,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFF00E676).withValues(alpha: 0.3)),
+              border: Border.all(color: AppColors.green.withValues(alpha: 0.4)),
             ),
             child: Row(
               children: [
@@ -714,9 +706,9 @@ class _EcgMeasurementPageState extends State<EcgMeasurementPage>
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E293B).withValues(alpha: 0.7),
+                color: AppColors.surface,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                border: Border.all(color: AppColors.cardBorder),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -837,9 +829,9 @@ class _EcgMeasurementPageState extends State<EcgMeasurementPage>
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B).withValues(alpha: 0.6),
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        border: Border.all(color: AppColors.cardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

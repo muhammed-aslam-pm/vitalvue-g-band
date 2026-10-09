@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../theme/app_theme.dart';
+
 class ActionCaptureDialog extends StatefulWidget {
   const ActionCaptureDialog({super.key});
 
@@ -36,7 +38,7 @@ class _ActionCaptureDialogState extends State<ActionCaptureDialog> {
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1), width: 1.5),
+          border: Border.all(color: AppColors.cardBorder, width: 1.5),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.2),
@@ -70,7 +72,7 @@ class _ActionCaptureDialogState extends State<ActionCaptureDialog> {
                 ],
               ),
             ),
-            Divider(height: 1, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1)),
+            const Divider(height: 1, color: AppColors.cardBorder),
             
             // Body
             Padding(
@@ -99,19 +101,19 @@ class _ActionCaptureDialogState extends State<ActionCaptureDialog> {
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                           decoration: BoxDecoration(
                             color: isSelected 
-                                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
-                                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+                                ? AppColors.primary.withValues(alpha: 0.15)
+                                : AppColors.surfaceElevated,
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
                               color: isSelected 
-                                  ? Theme.of(context).colorScheme.primary 
-                                  : Colors.transparent,
+                                  ? AppColors.primary 
+                                  : AppColors.cardBorder,
                             ),
                           ),
                           child: Text(
                             action,
                             style: TextStyle(
-                              color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                              color: isSelected ? AppColors.primary : AppColors.textSecondary,
                               fontSize: 13,
                               fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                             ),
@@ -128,12 +130,20 @@ class _ActionCaptureDialogState extends State<ActionCaptureDialog> {
                       style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 14),
                       decoration: InputDecoration(
                         hintText: 'Describe the action...',
-                        hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)),
+                        hintStyle: const TextStyle(color: AppColors.textMuted),
                         filled: true,
-                        fillColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+                        fillColor: AppColors.surfaceElevated,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
+                          borderSide: const BorderSide(color: AppColors.cardBorder),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.cardBorder),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.primary),
                         ),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                       ),
@@ -143,7 +153,7 @@ class _ActionCaptureDialogState extends State<ActionCaptureDialog> {
               ),
             ),
             
-            Divider(height: 1, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1)),
+            const Divider(height: 1, color: AppColors.cardBorder),
             
             // Footer
             Padding(
@@ -154,8 +164,8 @@ class _ActionCaptureDialogState extends State<ActionCaptureDialog> {
                   OutlinedButton(
                     onPressed: () => Navigator.of(context).pop(),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                      side: BorderSide(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2)),
+                      foregroundColor: AppColors.textSecondary,
+                      side: const BorderSide(color: AppColors.cardBorder),
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
@@ -173,10 +183,10 @@ class _ActionCaptureDialogState extends State<ActionCaptureDialog> {
                       Navigator.of(context).pop(result);
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFBCAAA4), // the brownish color from screenshot
-                      foregroundColor: const Color(0xFF3E2723),
-                      disabledBackgroundColor: const Color(0xFFBCAAA4).withValues(alpha: 0.3),
-                      disabledForegroundColor: Colors.black38,
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.3),
+                      disabledForegroundColor: Colors.white38,
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       elevation: 0,

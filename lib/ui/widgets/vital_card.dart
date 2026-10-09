@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
+import '../theme/app_theme.dart';
+
 /// A glassmorphism vital-sign card.
 ///
 /// Shows a large animated number, unit label, icon, and label text.
@@ -32,13 +34,13 @@ class VitalCard extends StatelessWidget {
     Widget cardContent = Container(
       decoration: BoxDecoration(
         color: isAlert
-            ? const Color(0x22E53935)
+            ? AppColors.red.withValues(alpha: 0.15)
             : Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: isAlert
-              ? const Color(0xAAE53935)
-              : accentColor.withValues(alpha: 0.25),
+              ? AppColors.red.withValues(alpha: 0.7)
+              : AppColors.cardBorder,
           width: 1.5,
         ),
         boxShadow: [
@@ -91,7 +93,7 @@ class VitalCard extends StatelessWidget {
                   Text(
                     value,
                     style: TextStyle(
-                      color: isAlert ? const Color(0xFFFF6B6B) : Theme.of(context).colorScheme.onSurface,
+                      color: isAlert ? AppColors.red : Theme.of(context).colorScheme.onSurface,
                       fontSize: 42,
                       fontWeight: FontWeight.w800,
                       height: 1.0,

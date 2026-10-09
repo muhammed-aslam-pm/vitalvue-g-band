@@ -1,10 +1,10 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../cloud/assigned_patient.dart';
+import '../pages/patient_baseline_page.dart';
+import '../theme/app_theme.dart';
 
 class PatientMonitorCard extends StatelessWidget {
   const PatientMonitorCard({
@@ -21,24 +21,24 @@ class PatientMonitorCard extends StatelessWidget {
   static Color _statusColor(String status) {
     switch (status) {
       case 'Critical':
-        return const Color(0xFFE53935);
+        return AppColors.red;
       case 'Warning':
-        return const Color(0xFFFFA726);
+        return AppColors.amber;
       default:
-        return const Color(0xFF43A047);
+        return AppColors.green;
     }
   }
 
   static Color _severityBorderColor(int severity, BuildContext context) {
-    if (severity == 2) return const Color(0xFFE53935).withValues(alpha: 0.7);
-    if (severity == 1) return const Color(0xFFFFA726).withValues(alpha: 0.5);
-    return Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06);
+    if (severity == 2) return AppColors.red.withValues(alpha: 0.8);
+    if (severity == 1) return AppColors.amber.withValues(alpha: 0.7);
+    return AppColors.cardBorder;
   }
 
   static Color _severityBgTint(int severity, BuildContext context) {
-    if (severity == 2) return const Color(0xFFE53935).withValues(alpha: 0.06);
-    if (severity == 1) return const Color(0xFFFFA726).withValues(alpha: 0.04);
-    return Theme.of(context).colorScheme.surface;
+    if (severity == 2) return AppColors.red.withValues(alpha: 0.08);
+    if (severity == 1) return AppColors.amber.withValues(alpha: 0.05);
+    return AppColors.surface;
   }
 
   @override
@@ -53,10 +53,18 @@ class PatientMonitorCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: _severityBorderColor(severity, context)),
       ),
-      child: ClipRRect(
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PatientBaselinePage(patient: patient),
+              ),
+            );
+          },
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -72,6 +80,8 @@ class PatientMonitorCard extends StatelessWidget {
                   _StatusRow(vitals: v, patient: patient),
                 ] else
                   _NoDataRow(),
+                const SizedBox(height: 10),
+                const _BaselineActionRow(),
               ],
             ),
           ),
@@ -101,9 +111,9 @@ class _Header extends StatelessWidget {
           height: 40,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: const Color(0xFF1A73E8).withValues(alpha: 0.15),
+            color: AppColors.primary.withValues(alpha: 0.15),
             border: Border.all(
-                color: const Color(0xFF1A73E8).withValues(alpha: 0.3)),
+                color: AppColors.primary.withValues(alpha: 0.35)),
           ),
           child: Center(
             child: Text(
@@ -113,7 +123,7 @@ class _Header extends StatelessWidget {
               style: GoogleFonts.inter(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: const Color(0xFF1A73E8),
+                color: AppColors.primary,
               ),
             ),
           ),
@@ -413,3 +423,39 @@ class _NoDataRow extends StatelessWidget {
     );
   }
 }
+
+class _BaselineActionRow extends StatelessWidget {
+  const _BaselineActionRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.insights_rounded, size: 14, color: AppColors.primary),
+              SizedBox(width: 6),
+              Text(
+                'Clinical Baseline & Trends',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+          Icon(Icons.arrow_forward_ios_rounded, size: 11, color: AppColors.primary),
+        ],
+      ),
+    );
+  }
+}
+

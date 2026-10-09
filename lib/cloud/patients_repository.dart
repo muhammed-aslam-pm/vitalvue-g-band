@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../auth/auth_interceptor.dart';
 import 'assigned_patient.dart';
+import 'patient_baseline.dart';
 
 /// Fetches the list of patients assigned to the currently logged-in staff user.
 ///
@@ -119,6 +121,90 @@ class PatientsRepository {
           'patient_id': patientId,
           'alert_id': alertId,
           'action_type': actionType,
+        }),
+      );
+      rethrow;
+    }
+  }
+
+  /// Fetches the patient baseline and recent 10-minute observations.
+  /// [limit] observations to return (default 36 = 6 hours, max 144 = 24 hours).
+  Future<PatientBaseline> fetchPatientBaseline(int patientId, {int limit = 36}) async {
+    final url = '${_baseUrl}api/v1/patients/$patientId/baseline?limit=$limit';
+    try {
+      final resp = await _dio.get(url);
+      final raw = resp.data;
+      final data = raw is Map<String, dynamic>
+          ? raw
+          : (raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{});
+      final baseline = PatientBaseline.fromJson(data);
+      debugPrint('[PatientsRepository] Baseline loaded for patient $patientId (mode: ${baseline.mode}, obs: ${baseline.observations.length})');
+      return baseline;
+    } catch (e, stackTrace) {
+      debugPrint('[PatientsRepository] Failed to fetch baseline for patient $patientId: $e');
+      Sentry.captureException(
+        e,
+        stackTrace: stackTrace,
+        withScope: (scope) => scope.setContexts('Request', {
+          'url': url,
+          'patient_id': patientId,
+          'limit': limit,
+        }),
+      );
+      rethrow;
+    }
+  }
+
+  /// Fetches the patient baseline health score timeline and deterioration markers.
+  /// [range] can be '6h', '12h', '24h', '3d', or '7d'.
+  Future<BaselineTimeline> fetchPatientBaselineTimeline(int patientId, {String range = '24h'}) async {
+    final url = '${_baseUrl}api/v1/patients/$patientId/baseline/timeline?range=$range';
+    try {
+      final resp = await _dio.get(url);
+      final raw = resp.data;
+      final data = raw is Map<String, dynamic>
+          ? raw
+          : (raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{});
+      final timeline = BaselineTimeline.fromJson(data);
+      debugPrint('[PatientsRepository] Baseline timeline loaded for patient $patientId (range: $range, points: ${timeline.points.length})');
+      return timeline;
+    } catch (e, stackTrace) {
+      debugPrint('[PatientsRepository] Failed to fetch baseline timeline for patient $patientId: $e');
+      Sentry.captureException(
+        e,
+        stackTrace: stackTrace,
+        withScope: (scope) => scope.setContexts('Request', {
+          'url': url,
+          'patient_id': patientId,
+          'range': range,
+        }),
+      );
+      rethrow;
+    }
+  }
+
+  /// Fetches the patient's clinical incident & alert audit timeline.
+  /// Endpoint: GET /api/v1/patients/{patient_id}/timeline
+  Future<PatientIncidentTimeline> fetchPatientIncidentTimeline(int patientId, {int page = 1, int limit = 20}) async {
+    final url = '${_baseUrl}api/v1/patients/$patientId/timeline?page=$page&limit=$limit';
+    try {
+      final resp = await _dio.get(url);
+      final raw = resp.data;
+      final data = raw is Map<String, dynamic>
+          ? raw
+          : (raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{});
+      final timeline = PatientIncidentTimeline.fromJson(data);
+      debugPrint('[PatientsRepository] Incident timeline loaded for patient $patientId (alerts: ${timeline.alerts.length})');
+      return timeline;
+    } catch (e, stackTrace) {
+      debugPrint('[PatientsRepository] Failed to fetch incident timeline for patient $patientId: $e');
+      Sentry.captureException(
+        e,
+        stackTrace: stackTrace,
+        withScope: (scope) => scope.setContexts('Request', {
+          'url': url,
+          'patient_id': patientId,
+          'page': page,
         }),
       );
       rethrow;

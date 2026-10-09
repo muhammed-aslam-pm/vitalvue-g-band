@@ -18,6 +18,7 @@ import '../widgets/vital_card.dart';
 import 'ecg_measurement_page.dart';
 import 'profile_page.dart';
 import 'vitals_details_page.dart';
+import '../theme/app_theme.dart';
 
 class BandMonitorPage extends StatefulWidget {
   const BandMonitorPage({super.key});
@@ -68,7 +69,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
             content: Text(
               'Notice: Location Services (GPS) are OFF. Please enable Location in phone settings if scanning finds no devices.',
             ),
-            backgroundColor: Color(0xFFFFA726),
+            backgroundColor: AppColors.amber,
             duration: Duration(seconds: 5),
           ),
         );
@@ -107,7 +108,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(state.reason!),
-                      backgroundColor: const Color(0xFFE53935),
+                      backgroundColor: AppColors.red,
                     ),
                   );
                 }
@@ -162,7 +163,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           }
           return FloatingActionButton.extended(
             onPressed: () => _requestPermissionsAndScan(context),
-            backgroundColor: const Color(0xFF1A73E8),
+            backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
             icon: const Icon(Icons.bluetooth_searching_rounded),
             label: const Text('Scan for Band'),
@@ -239,16 +240,16 @@ class _BandMonitorPageState extends State<BandMonitorPage>
     }
 
     if (state is BandConnectingState) {
-      return _InfoBanner(
-        color: const Color(0xFFFFA726),
+      return const _InfoBanner(
+        color: AppColors.amber,
         icon: Icons.bluetooth_searching_rounded,
-        message: 'Connecting to ${state.deviceName}…',
+        message: 'Connecting to band…',
       );
     }
 
     if (state is BandDisconnectedState) {
       return const _InfoBanner(
-        color: Color(0xFFE53935),
+        color: AppColors.red,
         icon: Icons.bluetooth_disabled_rounded,
         message: 'Not connected — tap Scan to find your band.',
       );
@@ -294,7 +295,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           value: v.hr > 0 ? '${v.hr}' : '--',
           unit: 'bpm',
           icon: Icons.favorite_rounded,
-          accentColor: const Color(0xFFE53935),
+          accentColor: AppColors.red,
           subtitle: 'Live',
           isAlert: false,
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
@@ -302,7 +303,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               title: 'Heart Rate',
               dbColumnName: 'hr',
               unit: 'bpm',
-              accentColor: Color(0xFFE53935),
+              accentColor: AppColors.red,
             ),
           )),
         ),
@@ -313,7 +314,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               : 'Measure',
           unit: v.lastEcgResult != null && v.lastEcgResult!.aveHeart > 0 ? 'bpm' : '',
           icon: Icons.electric_bolt_rounded,
-          accentColor: const Color(0xFF00E676),
+          accentColor: AppColors.green,
           subtitle: v.lastEcgResult != null
               ? 'HRV: ${v.lastEcgResult!.aveHrv} ms | QT: ${v.lastEcgResult!.aveQt} ms'
               : 'Cardiac Rhythm Assessment',
@@ -329,14 +330,14 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           value: v.spo2 > 0 ? '${v.spo2}' : '--',
           unit: '%',
           icon: Icons.water_drop_rounded,
-          accentColor: const Color(0xFF00BFA5),
+          accentColor: AppColors.cyan,
           subtitle: 'Oxygen saturation',
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'SpO₂',
               dbColumnName: 'spo2',
               unit: '%',
-              accentColor: Color(0xFF00BFA5),
+              accentColor: AppColors.cyan,
             ),
           )),
         ),
@@ -345,14 +346,14 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           value: v.respiratoryRate > 0 ? '${v.respiratoryRate}' : '--',
           unit: 'rpm',
           icon: Icons.air_rounded,
-          accentColor: const Color(0xFF00ACC1),
+          accentColor: AppColors.cyan,
           subtitle: 'Breaths per minute',
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'Respiratory Rate',
               dbColumnName: 'respirationRate',
               unit: 'rpm',
-              accentColor: Color(0xFF00ACC1),
+              accentColor: AppColors.cyan,
             ),
           )),
         ),
@@ -361,7 +362,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           value: v.tempC > 0 ? '${v.tempC.toStringAsFixed(1)}°' : '--',
           unit: 'C',
           icon: Icons.thermostat_rounded,
-          accentColor: const Color(0xFFFFA726),
+          accentColor: AppColors.purple,
           subtitle: v.tempSkin > 0
               ? 'Core: ${v.tempC > 0 ? v.tempC.toStringAsFixed(1) : "--"}° | Skin: ${v.tempSkin.toStringAsFixed(1)}°'
               : 'Body & Skin Temp',
@@ -370,7 +371,7 @@ class _BandMonitorPageState extends State<BandMonitorPage>
               title: 'Body Temp',
               dbColumnName: 'tempC',
               unit: '°C',
-              accentColor: Color(0xFFFFA726),
+              accentColor: AppColors.purple,
             ),
           )),
         ),
@@ -379,14 +380,14 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           value: bpText,
           unit: 'mmHg',
           icon: Icons.monitor_heart_rounded,
-          accentColor: const Color(0xFF7C4DFF),
+          accentColor: AppColors.amber,
           subtitle: 'Systolic / Diastolic',
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'Blood Pressure (Systolic)',
               dbColumnName: 'bpSys',
               unit: 'mmHg',
-              accentColor: Color(0xFF7C4DFF),
+              accentColor: AppColors.amber,
             ),
           )),
         ),
@@ -395,14 +396,14 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           value: (v.hrv != null && v.hrv! > 0) ? '${v.hrv}' : '--',
           unit: 'ms',
           icon: Icons.favorite_border_rounded,
-          accentColor: const Color(0xFFE91E63),
+          accentColor: AppColors.purple,
           subtitle: 'Heart Rate Variability',
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'HRV',
               dbColumnName: 'hrv',
               unit: 'ms',
-              accentColor: Color(0xFFE91E63),
+              accentColor: AppColors.purple,
             ),
           )),
         ),
@@ -411,14 +412,14 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           value: (v.stress != null && v.stress! > 0) ? '${v.stress}' : '--',
           unit: '',
           icon: Icons.psychology_rounded,
-          accentColor: const Color(0xFF9C27B0),
+          accentColor: AppColors.amber,
           subtitle: 'Stress Level',
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'Stress Level',
               dbColumnName: 'stress',
               unit: '',
-              accentColor: Color(0xFF9C27B0),
+              accentColor: AppColors.amber,
             ),
           )),
         ),
@@ -427,14 +428,14 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           value: v.steps > 0 ? '${v.steps}' : '--',
           unit: 'steps',
           icon: Icons.directions_walk_rounded,
-          accentColor: const Color(0xFF4CAF50),
+          accentColor: AppColors.green,
           subtitle: 'Daily Activity',
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'Steps',
               dbColumnName: 'steps',
               unit: 'steps',
-              accentColor: Color(0xFF4CAF50),
+              accentColor: AppColors.green,
             ),
           )),
         ),
@@ -443,14 +444,14 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           value: v.distanceKm > 0 ? v.distanceKm.toStringAsFixed(2) : '--',
           unit: 'km',
           icon: Icons.route_rounded,
-          accentColor: const Color(0xFF2196F3),
+          accentColor: AppColors.primary,
           subtitle: 'Estimated',
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'Distance',
               dbColumnName: 'distanceKm',
               unit: 'km',
-              accentColor: Color(0xFF2196F3),
+              accentColor: AppColors.primary,
             ),
           )),
         ),
@@ -459,14 +460,14 @@ class _BandMonitorPageState extends State<BandMonitorPage>
           value: v.calories > 0 ? v.calories.toStringAsFixed(0) : '--',
           unit: 'kcal',
           icon: Icons.local_fire_department_rounded,
-          accentColor: const Color(0xFFFF5722),
+          accentColor: AppColors.amber,
           subtitle: 'Burned today',
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const VitalsDetailsPage(
               title: 'Calories',
               dbColumnName: 'calories',
               unit: 'kcal',
-              accentColor: Color(0xFFFF5722),
+              accentColor: AppColors.amber,
             ),
           )),
         ),
@@ -565,17 +566,17 @@ class _BackgroundGradient extends StatelessWidget {
         Positioned(
           top: -100,
           left: -80,
-          child: _blob(const Color(0x261A73E8), 300),
+          child: _blob(AppColors.primary.withValues(alpha: 0.15), 300),
         ),
         Positioned(
           bottom: 100,
           right: -60,
-          child: _blob(const Color(0x1A7C4DFF), 260),
+          child: _blob(AppColors.cyan.withValues(alpha: 0.10), 260),
         ),
         Positioned(
           top: 300,
           left: 80,
-          child: _blob(const Color(0x1500BFA5), 200),
+          child: _blob(AppColors.purple.withValues(alpha: 0.08), 200),
         ),
       ],
     );
@@ -604,8 +605,8 @@ class _WearingChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color, icon) = isRemoved
-        ? ('Off-Wrist', const Color(0xFFE53935), Icons.watch_off_rounded)
-        : ('On-Wrist', const Color(0xFF00ACC1), Icons.watch_rounded);
+        ? ('Off-Wrist', AppColors.red, Icons.watch_off_rounded)
+        : ('On-Wrist', AppColors.cyan, Icons.watch_rounded);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -643,16 +644,16 @@ class _BatteryChip extends StatelessWidget {
     Color color;
     IconData icon;
     if (battery > 50) {
-      color = const Color(0xFF43A047);
+      color = AppColors.green;
       icon = Icons.battery_full_rounded;
     } else if (battery > 20) {
-      color = const Color(0xFFFFA726);
+      color = AppColors.amber;
       icon = Icons.battery_5_bar_rounded;
     } else if (battery >= 0) {
-      color = const Color(0xFFE53935);
+      color = AppColors.red;
       icon = Icons.battery_alert_rounded;
     } else {
-      color = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);
+      color = AppColors.textMuted;
       icon = Icons.battery_unknown_rounded;
     }
 
@@ -690,10 +691,10 @@ class _ConnectionChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color) = switch (state) {
-      BandConnectedState() => ('Connected', const Color(0xFF43A047)),
-      BandConnectingState() => ('Connecting', const Color(0xFFFFA726)),
-      BandScanningState() => ('Scanning', const Color(0xFF1A73E8)),
-      _ => ('Disconnected', const Color(0xFF4A4A5A)),
+      BandConnectedState() => ('Connected', AppColors.green),
+      BandConnectingState() => ('Connecting', AppColors.amber),
+      BandScanningState() => ('Scanning', AppColors.primary),
+      _ => ('Disconnected', AppColors.textMuted),
     };
 
     return Container(
@@ -886,13 +887,13 @@ class _SyncStatusBannerState extends State<_SyncStatusBanner> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: _showCompleted
-                    ? const Color(0xFF1B5E20).withValues(alpha: 0.18)
-                    : const Color(0xFF00BFA5).withValues(alpha: 0.12),
+                    ? AppColors.green.withValues(alpha: 0.15)
+                    : AppColors.cyan.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
                   color: _showCompleted
-                      ? const Color(0xFF43A047).withValues(alpha: 0.4)
-                      : const Color(0xFF00BFA5).withValues(alpha: 0.35),
+                      ? AppColors.green.withValues(alpha: 0.4)
+                      : AppColors.cyan.withValues(alpha: 0.35),
                   width: 1.2,
                 ),
               ),
@@ -901,13 +902,13 @@ class _SyncStatusBannerState extends State<_SyncStatusBanner> {
                   if (_showCompleted)
                     const Icon(
                       Icons.check_circle_rounded,
-                      color: Color(0xFF43A047),
+                      color: AppColors.green,
                       size: 20,
                     )
                   else
                     const Icon(
                       Icons.sync_rounded,
-                      color: Color(0xFF00BFA5),
+                      color: AppColors.cyan,
                       size: 20,
                     )
                         .animate(onPlay: (controller) => controller.repeat())
@@ -926,8 +927,8 @@ class _SyncStatusBannerState extends State<_SyncStatusBanner> {
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                             color: _showCompleted
-                                ? const Color(0xFF2E7D32)
-                                : const Color(0xFF00897B),
+                                ? AppColors.green
+                                : AppColors.cyan,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -937,12 +938,9 @@ class _SyncStatusBannerState extends State<_SyncStatusBanner> {
                               : (widget.pendingCount > 0
                                   ? '${widget.pendingCount} records queued for cloud ingest…'
                                   : 'Uploading historical readings…'),
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 11,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.65),
+                            color: AppColors.textSecondary,
                           ),
                         ),
                       ],
@@ -953,7 +951,7 @@ class _SyncStatusBannerState extends State<_SyncStatusBanner> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF00BFA5).withValues(alpha: 0.2),
+                        color: AppColors.cyan.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
@@ -963,7 +961,7 @@ class _SyncStatusBannerState extends State<_SyncStatusBanner> {
                             width: 6,
                             height: 6,
                             decoration: const BoxDecoration(
-                              color: Color(0xFF00BFA5),
+                              color: AppColors.cyan,
                               shape: BoxShape.circle,
                             ),
                           )
@@ -976,7 +974,7 @@ class _SyncStatusBannerState extends State<_SyncStatusBanner> {
                             style: GoogleFonts.inter(
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
-                              color: const Color(0xFF00796B),
+                              color: AppColors.cyan,
                               letterSpacing: 0.5,
                             ),
                           ),

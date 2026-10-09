@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../bloc/band_monitor_bloc.dart';
 import '../../bloc/band_monitor_event.dart';
 import '../../bloc/band_monitor_state.dart';
+import '../theme/app_theme.dart';
 
 /// Bottom sheet for displaying BLE scan results and connecting to a device.
 class DeviceScanSheet extends StatelessWidget {
@@ -28,7 +29,7 @@ class DeviceScanSheet extends StatelessWidget {
               height: 4,
               margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
+                color: AppColors.textMuted,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -42,10 +43,10 @@ class DeviceScanSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          Text(
+          const Text(
             'Ensure Bluetooth & Location (GPS) are enabled and band is nearby…',
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+              color: AppColors.textSecondary,
               fontSize: 13,
             ),
           ),
@@ -53,18 +54,18 @@ class DeviceScanSheet extends StatelessWidget {
           BlocBuilder<BandMonitorBloc, BandMonitorState>(
             builder: (context, state) {
               if (state is BandScanningState && state.results.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
                   child: Center(
                     child: Column(
                       children: [
-                        const CircularProgressIndicator(
-                            color: Color(0xFF1A73E8)),
-                        const SizedBox(height: 16),
+                        CircularProgressIndicator(
+                            color: AppColors.primary),
+                        SizedBox(height: 16),
                         Text(
                           'Looking for nearby G-Band devices…',
                           style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                              color: AppColors.textSecondary,
                               fontSize: 14),
                         ),
                       ],
@@ -89,8 +90,8 @@ class DeviceScanSheet extends StatelessWidget {
                 child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: results.length,
-                  separatorBuilder: (_, __) => Divider(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
+                  separatorBuilder: (_, __) => const Divider(
+                    color: AppColors.cardBorder,
                     height: 1,
                   ),
                   itemBuilder: (context, i) {
@@ -105,12 +106,12 @@ class DeviceScanSheet extends StatelessWidget {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: (isKnown ? const Color(0xFF1A73E8) : Colors.grey)
+                          color: (isKnown ? AppColors.primary : Colors.grey)
                               .withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(Icons.watch_rounded,
-                            color: isKnown ? const Color(0xFF1A73E8) : Colors.grey,
+                            color: isKnown ? AppColors.primary : Colors.grey,
                             size: 22),
                       ),
                       title: Text(
@@ -123,14 +124,14 @@ class DeviceScanSheet extends StatelessWidget {
                       ),
                       subtitle: Text(
                         r.mac,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
                           fontSize: 12,
                         ),
                       ),
                       trailing: FilledButton(
                         style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF1A73E8),
+                          backgroundColor: AppColors.primary,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10)),
                           padding: const EdgeInsets.symmetric(
@@ -156,8 +157,8 @@ class DeviceScanSheet extends StatelessWidget {
             width: double.infinity,
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-                side: BorderSide(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2)),
+                foregroundColor: AppColors.textSecondary,
+                side: const BorderSide(color: AppColors.cardBorder),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 padding: const EdgeInsets.symmetric(vertical: 14),

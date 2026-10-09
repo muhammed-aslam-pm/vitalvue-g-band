@@ -6,6 +6,7 @@ import '../../bloc/register_event.dart';
 import '../../bloc/register_state.dart';
 import '../../cloud/discovery_api.dart';
 import '../../cloud/patient_api.dart';
+import '../theme/app_theme.dart';
 
 const _kApiBaseUrl = String.fromEnvironment(
   'BAND_API_URL',
@@ -207,12 +208,13 @@ class _RegisterPatientPageState extends State<RegisterPatientPage> {
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
-                        backgroundColor: const Color(0xFF1A73E8),
+                        backgroundColor: AppColors.primary,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: state.status == RegisterStatus.loading ? null : _onSubmit,
                       child: state.status == RegisterStatus.loading
                           ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text('Register Patient', style: TextStyle(fontSize: 16, color: Colors.white)),
+                          : const Text('Register Patient', style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
@@ -246,9 +248,21 @@ class _RegisterPatientPageState extends State<RegisterPatientPage> {
         textCapitalization: textCapitalization,
         decoration: InputDecoration(
           labelText: label,
+          labelStyle: const TextStyle(color: AppColors.textSecondary),
           filled: true,
-          fillColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          fillColor: AppColors.surfaceElevated,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppColors.cardBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppColors.cardBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+          ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),
         keyboardType: keyboardType,
@@ -272,9 +286,21 @@ class _RegisterPatientPageState extends State<RegisterPatientPage> {
       value: selectedValue,
       decoration: InputDecoration(
         labelText: label,
+        labelStyle: const TextStyle(color: AppColors.textSecondary),
         filled: true,
-        fillColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        fillColor: AppColors.surfaceElevated,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.cardBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.cardBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+        ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
       dropdownColor: Theme.of(context).colorScheme.surface,

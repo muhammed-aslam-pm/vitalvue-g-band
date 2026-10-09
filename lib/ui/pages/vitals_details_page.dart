@@ -3,6 +3,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 
 import '../../db/vitals_database.dart';
+import '../theme/app_theme.dart';
 
 class VitalsDetailsPage extends StatefulWidget {
   final String title;
@@ -72,11 +73,11 @@ class _VitalsDetailsPageState extends State<VitalsDetailsPage> {
         foregroundColor: Theme.of(context).colorScheme.onSurface,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.blue))
+          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
           : _vitalsData.isEmpty
-              ? Center(
+              ? const Center(
                   child: Text('No data recorded in the last 24 hours.',
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6))))
+                      style: TextStyle(color: AppColors.textSecondary)))
               : Column(
                   children: [
                     _buildChartSection(),
@@ -97,8 +98,8 @@ class _VitalsDetailsPageState extends State<VitalsDetailsPage> {
             show: true,
             drawVerticalLine: false,
             getDrawingHorizontalLine: (value) {
-              return FlLine(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
+              return const FlLine(
+                color: AppColors.cardBorder,
                 strokeWidth: 1,
               );
             },
@@ -118,7 +119,7 @@ class _VitalsDetailsPageState extends State<VitalsDetailsPage> {
                     padding: const EdgeInsets.only(top: 8.0),
                     child: Text(
                       DateFormat('HH:mm').format(date),
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 10),
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 10),
                     ),
                   );
                 },
@@ -131,7 +132,7 @@ class _VitalsDetailsPageState extends State<VitalsDetailsPage> {
                 getTitlesWidget: (value, meta) {
                   return Text(
                     value.toInt().toString(),
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 10),
+                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 10),
                     textAlign: TextAlign.left,
                   );
                 },
@@ -185,11 +186,12 @@ class _VitalsDetailsPageState extends State<VitalsDetailsPage> {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border.all(color: AppColors.cardBorder),
       ),
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: _vitalsData.length,
-        separatorBuilder: (context, index) => Divider(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1)),
+        separatorBuilder: (context, index) => const Divider(color: AppColors.cardBorder),
         itemBuilder: (context, index) {
           // reverse list so newest is on top
           final data = _vitalsData[_vitalsData.length - 1 - index];
@@ -207,7 +209,7 @@ class _VitalsDetailsPageState extends State<VitalsDetailsPage> {
               ),
               child: Icon(
                 isIngested ? Icons.cloud_done : Icons.cloud_upload,
-                color: isIngested ? widget.accentColor : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                color: isIngested ? widget.accentColor : AppColors.textMuted,
                 size: 20,
               ),
             ),
@@ -217,12 +219,12 @@ class _VitalsDetailsPageState extends State<VitalsDetailsPage> {
             ),
             subtitle: Text(
               DateFormat('MMM d, yyyy - HH:mm:ss').format(date),
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 13),
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
             ),
             trailing: Text(
               isIngested ? 'Synced' : 'Pending',
               style: TextStyle(
-                color: isIngested ? Colors.greenAccent : Colors.orangeAccent,
+                color: isIngested ? AppColors.green : AppColors.amber,
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
